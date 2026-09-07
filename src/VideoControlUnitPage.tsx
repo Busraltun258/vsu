@@ -482,16 +482,15 @@ function VcuGesbCard({
           <Tooltip title="Bu GESB'in içeriğini başka bir GESB'e kopyalar: dokunun, sonra hedef GESB'e dokunun.">
             <Button
               type="text"
-              size="small"
               disabled={isOffline || copyDisabled}
               icon={
-                <CopyOutlined style={{ fontSize: 13, color: copySource ? token.colorWarning : undefined }} />
+                <CopyOutlined style={{ fontSize: 16, color: copySource ? token.colorWarning : undefined }} />
               }
               onClick={(event) => {
                 event.stopPropagation()
                 onCopy()
               }}
-              style={{ padding: "0 4px" }}
+              style={{ padding: "0 8px", marginInlineStart: -8 }}
             />
           </Tooltip>
           <span
@@ -567,6 +566,7 @@ function VcuGesbCard({
                   </Text>
                   <Button
                     type="text"
+                    disabled={isLive}
                     icon={<CloseOutlined style={{ fontSize: 13 }} />}
                     onClick={(event) => {
                       event.stopPropagation()
@@ -632,6 +632,7 @@ function VcuGesbCard({
                   </div>
                   <Button
                     type="text"
+                    disabled={isLive}
                     icon={<CloseOutlined style={{ fontSize: 12 }} />}
                     onClick={(event) => {
                       event.stopPropagation()
@@ -688,7 +689,7 @@ function VcuGesbCard({
 
           <Button
             type="text"
-            disabled={filledCount === 0}
+            disabled={filledCount === 0 || isLive}
             onClick={(event) => {
               event.stopPropagation()
               onClear()
@@ -832,7 +833,8 @@ function VideoControlUnitContent({
    *    tekrar dokunmak kopya modunu iptal eder.
    *  - Değilse: bu GESB yeni "hedef" olur. Her seferinde TEMİZ başlar — önceki
    *    hedefte seçili olan videolar buraya taşınmaz, kullanıcı soldan yeniden
-   *    seçer. Aynı GESB'e tekrar dokunmak hedeflemeyi kaldırır.
+   *    seçer. Zaten hedef olan karta TEKRAR dokunmak hiçbir şey yapmaz —
+   *    aksi halde soldaki kütüphanede az önce yapılan seçim sıfırlanıyordu.
    */
   function handleGesbTap(id: string) {
     if (copySourceId) {
@@ -841,7 +843,9 @@ function VideoControlUnitContent({
       return
     }
 
-    setSelectedGesbId((prev) => (prev === id ? null : id))
+    if (selectedGesbId === id) return
+
+    setSelectedGesbId(id)
     setSelectedVideoIds([])
   }
 
