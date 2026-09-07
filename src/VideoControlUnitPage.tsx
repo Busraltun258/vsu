@@ -1,4 +1,3 @@
-
 /**
  * ════════════════════════════════════════════════════════════════════
  *  VIDEO KONTROL ÜNİTESİ (VCU) — TASARIM MOCKUP'I
@@ -18,38 +17,40 @@
  *  geldiğinde "SAHTE VERİ" bölümünün yerini bir API client'ı alır.
  * ════════════════════════════════════════════════════════════════════ */
 
+import { useEffect, useMemo, useState } from "react"
 import {
-    CheckOutlined,
-    CloseOutlined,
-    MoonOutlined,
-    PauseOutlined,
-    PlayCircleFilled,
-    PlaySquareOutlined,
-    PlusOutlined,
-    PoweroffOutlined,
-    SearchOutlined,
-    SunOutlined,
-    VideoCameraOutlined,
-    WifiOutlined,
+  CheckOutlined,
+  CloseOutlined,
+  CopyOutlined,
+  MoonOutlined,
+  PauseOutlined,
+  PlayCircleFilled,
+  PlaySquareOutlined,
+  PlusOutlined,
+  PoweroffOutlined,
+  SearchOutlined,
+  SunOutlined,
+  VideoCameraOutlined,
+  WifiOutlined,
 } from "@ant-design/icons"
 import {
-    App as AntApp,
-    Badge,
-    Button,
-    Card,
-    ConfigProvider,
-    DatePicker,
-    Input,
-    List,
-    Popconfirm,
-    Segmented,
-    Tag,
-    Typography,
-    theme as antdTheme,
-    type ThemeConfig,
+  App as AntApp,
+  Badge,
+  Button,
+  Card,
+  ConfigProvider,
+  DatePicker,
+  Input,
+  List,
+  Popconfirm,
+  Segmented,
+  Tag,
+  theme as antdTheme,
+  type ThemeConfig,
+  Tooltip,
+  Typography,
 } from "antd"
 import dayjs from "dayjs"
-import { useEffect, useMemo, useState } from "react"
 
 const { useToken } = antdTheme
 const { Text } = Typography
@@ -102,12 +103,12 @@ const initialVideos: VcuVideoSource[] = [
   { id: "v1", name: "Açılış Konuşması", kind: "recorded", duration: "04:12", date: "2026-09-06" },
   { id: "v2", name: "Sponsor Tanıtım Filmi", kind: "recorded", duration: "01:45", date: "2026-09-02" },
   { id: "v3", name: "Ürün Lansmanı", kind: "recorded", duration: "06:30", date: "2026-09-05" },
-  { id: "v4", name: "Sahne Kamerası 1", kind: "live" },
-  { id: "v5", name: "Sahne Kamerası 2", kind: "live" },
-  { id: "v6", name: "Salon Genel Kamera", kind: "live" },
+  { id: "v4", name: "Kamera 01 · Ana Sahne", kind: "live" },
+  { id: "v5", name: "Sensör 02 · Ana Sahne", kind: "live" },
+  { id: "v6", name: "Kamera 03 · Salon Genel", kind: "live" },
   { id: "v7", name: "Kapanış Filmi", kind: "recorded", duration: "03:05", date: "2026-09-01" },
   { id: "v8", name: "Röportaj - CEO", kind: "recorded", duration: "08:20", date: "2026-08-15" },
-  { id: "v9", name: "Fuaye Kamerası", kind: "live" },
+  { id: "v9", name: "Sensör 04 · Fuaye", kind: "live" },
   {
     id: "v10",
     name: "Katılımcı Anket Sonuçları",
@@ -122,7 +123,7 @@ const initialVideos: VcuVideoSource[] = [
     duration: "05:50",
     date: "2026-07-20",
   },
-  { id: "v12", name: "Giriş Kamerası", kind: "live" },
+  { id: "v12", name: "Kamera 05 · Giriş Holü", kind: "live" },
 ]
 
 const initialGesbs: VcuGesb[] = [
@@ -327,10 +328,12 @@ type VcuVideoRowProps = {
   selected: boolean
   /** Dörtlü modda seçim sırası (1-4). Tekli modda veya seçili değilken undefined. */
   slotNumber?: number
+  /** Kayıtlı videolar kataloğundaki sırası (1, 2, 3...). Canlı kaynaklarda undefined. */
+  orderNumber?: number
   onToggle: () => void
 }
 
-function VcuVideoRow({ video, selected, slotNumber, onToggle }: VcuVideoRowProps) {
+function VcuVideoRow({ video, selected, slotNumber, orderNumber, onToggle }: VcuVideoRowProps) {
   const { token } = useToken()
   const isLive = video.kind === "live"
 
@@ -366,7 +369,7 @@ function VcuVideoRow({ video, selected, slotNumber, onToggle }: VcuVideoRowProps
         }
         title={
           <Text style={{ fontSize: 12, fontWeight: 500 }} ellipsis>
-            {video.name}
+            {orderNumber !== undefined ? `${orderNumber}. ${video.name}` : video.name}
           </Text>
         }
         description={
@@ -405,7 +408,12 @@ type VcuGesbCardProps = {
   videosById: Map<string, VcuVideoSource>
   /** Bir sonraki video seçiminin hedefi olarak seçili mi. */
   selected: boolean
+  /** Kopyalama işleminin kaynağı olarak işaretli mi (kopya modu aktif). */
+  copySource: boolean
+  /** Kopyalanacak içerik yoksa (boş GESB) kopya düğmesi pasif. */
+  copyDisabled: boolean
   onToggleSelect: () => void
+  onCopy: () => void
   onStart: () => void
   onStop: () => void
   onClear: () => void
@@ -424,7 +432,10 @@ function VcuGesbCard({
   gesb,
   videosById,
   selected,
+  copySource,
+  copyDisabled,
   onToggleSelect,
+  onCopy,
   onStart,
   onStop,
   onClear,
@@ -463,11 +474,26 @@ function VcuGesbCard({
       style={{
         opacity: isOffline ? 0.6 : 1,
         cursor: isOffline ? "not-allowed" : "pointer",
-        borderColor: selected ? token.colorPrimary : undefined,
-        background: selected ? token.colorPrimaryBg : undefined,
+        borderColor: copySource ? token.colorWarning : selected ? token.colorPrimary : undefined,
+        background: copySource ? token.colorWarningBg : selected ? token.colorPrimaryBg : undefined,
       }}
       title={
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+          <Tooltip title="Bu GESB'in içeriğini başka bir GESB'e kopyalar: dokunun, sonra hedef GESB'e dokunun.">
+            <Button
+              type="text"
+              size="small"
+              disabled={isOffline || copyDisabled}
+              icon={
+                <CopyOutlined style={{ fontSize: 13, color: copySource ? token.colorWarning : undefined }} />
+              }
+              onClick={(event) => {
+                event.stopPropagation()
+                onCopy()
+              }}
+              style={{ padding: "0 4px" }}
+            />
+          </Tooltip>
           <span
             className={isLive ? "vcu-live-dot" : undefined}
             style={{
@@ -718,7 +744,11 @@ function VideoControlUnitContent({
   const [kindFilter, setKindFilter] = useState<VcuVideoKind | "all">("all")
   const [dateRange, setDateRange] = useState(DEFAULT_DATE_RANGE)
   const [selectedVideoIds, setSelectedVideoIds] = useState<string[]>([])
-  const [selectedGesbIds, setSelectedGesbIds] = useState<string[]>([])
+  /** O an hedeflenen TEK GESB — aynı anda birden fazla GESB hedeflenemez. */
+  const [selectedGesbId, setSelectedGesbId] = useState<string | null>(null)
+  /** Kopya modunda "kaynak" olarak işaretlenen GESB. Dolu olduğunda bir sonraki
+   *  GESB dokunuşu hedef seçmek yerine bu GESB'in içeriğini oraya yapıştırır. */
+  const [copySourceId, setCopySourceId] = useState<string | null>(null)
 
   // Tekli/Dörtlü artık ayrı bir seçim değil — kaç video seçildiğinden
   // türetiliyor. Operatörün ayrıca mod seçmesine gerek yok, biz zaten
@@ -729,6 +759,19 @@ function VideoControlUnitContent({
     () => new Map(initialVideos.map((video) => [video.id, video])),
     [],
   )
+
+  /** Kayıtlı videoları katalog sırasına göre numaralandırır (1, 2, 3...); canlı kaynaklarda karşılık yok. */
+  const recordedIndexById = useMemo(() => {
+    const map = new Map<string, number>()
+    let count = 0
+    for (const video of initialVideos) {
+      if (video.kind === "recorded") {
+        count += 1
+        map.set(video.id, count)
+      }
+    }
+    return map
+  }, [])
 
   const filteredVideos = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("tr-TR")
@@ -746,22 +789,20 @@ function VideoControlUnitContent({
   const liveVideoCount = initialVideos.filter((v) => v.kind === "live").length
 
   /**
-   * "Gönder" butonu yok — hedeflenen GESB'ler seçimle EŞ ZAMANLI güncellenir.
+   * "Gönder" butonu yok — hedeflenen TEK GESB seçimle EŞ ZAMANLI güncellenir.
    * Kartta görünmesi zaten "yüklendi" demek. Yayına almak hâlâ ayrı bir adım
    * (Başlat) — bu yüzden video değişikliği, canlıdaki bir GESB'i otomatik
    * "Yüklü"ye düşürür (yeni içerik onaylanmadan ekrana yansımaz).
    */
-  function pushSelectionToGesbs(targetIds: string[], videoIds: string[]) {
-    if (targetIds.length === 0 || videoIds.length === 0) return
+  function pushSelectionToGesb(targetId: string, videoIds: string[]) {
+    if (videoIds.length === 0) return
 
     const slots = [0, 1, 2, 3].map((i) => videoIds[i] ?? null)
     const nextLayout: VcuLayout = videoIds.length > 1 ? "quad" : "single"
 
     setGesbs((prev) =>
       prev.map((g) =>
-        targetIds.includes(g.id)
-          ? { ...g, layout: nextLayout, slots, status: "loaded" as const }
-          : g,
+        g.id === targetId ? { ...g, layout: nextLayout, slots, status: "loaded" as const } : g,
       ),
     )
   }
@@ -781,30 +822,56 @@ function VideoControlUnitContent({
     }
 
     setSelectedVideoIds(next)
-    pushSelectionToGesbs(selectedGesbIds, next)
+    if (selectedGesbId) pushSelectionToGesb(selectedGesbId, next)
   }
 
-  // Bir GESB'i hedef olarak seçtiğinde iki durum var:
-  //  - Staging boşsa: o GESB'de o an ne yüklüyse sol tarafa çekilir (görüp
-  //    düzenleyebilesin diye).
-  //  - Staging'de zaten bir seçim varsa: direkt o GESB'e basılır (anlık yükleme).
-  function toggleGesbSelect(id: string) {
-    const alreadySelected = selectedGesbIds.includes(id)
-
-    if (!alreadySelected) {
-      if (selectedVideoIds.length === 0) {
-        const gesb = gesbs.find((g) => g.id === id)
-        if (gesb && (gesb.status === "loaded" || gesb.status === "live")) {
-          setSelectedVideoIds(gesb.slots.filter((slot): slot is string => slot !== null))
-        }
-      } else {
-        pushSelectionToGesbs([id], selectedVideoIds)
-      }
+  /**
+   * Bir GESB kartına dokunmanın iki farklı anlamı olabilir:
+   *  - Kopya modu aktifse (copySourceId dolu): bu GESB HEDEF olur, kaynağın
+   *    içeriği doğrudan buraya yapıştırılır ve kopya modu kapanır. Kaynağa
+   *    tekrar dokunmak kopya modunu iptal eder.
+   *  - Değilse: bu GESB yeni "hedef" olur. Her seferinde TEMİZ başlar — önceki
+   *    hedefte seçili olan videolar buraya taşınmaz, kullanıcı soldan yeniden
+   *    seçer. Aynı GESB'e tekrar dokunmak hedeflemeyi kaldırır.
+   */
+  function handleGesbTap(id: string) {
+    if (copySourceId) {
+      if (copySourceId !== id) pasteGesbContent(copySourceId, id)
+      setCopySourceId(null)
+      return
     }
 
-    setSelectedGesbIds((prev) =>
-      alreadySelected ? prev.filter((g) => g !== id) : [...prev, id],
+    setSelectedGesbId((prev) => (prev === id ? null : id))
+    setSelectedVideoIds([])
+  }
+
+  /** Kopya simgesine dokunma: bu GESB'i kopya kaynağı yapar (tekrar dokunmak iptal eder). */
+  function handleCopyClick(id: string) {
+    setSelectedGesbId(null)
+    setSelectedVideoIds([])
+    setCopySourceId((prev) => (prev === id ? null : id))
+    if (copySourceId !== id) {
+      void message.info("Şimdi içeriğin yapıştırılacağı GESB'e dokunun.")
+    }
+  }
+
+  function pasteGesbContent(sourceId: string, targetId: string) {
+    const source = gesbs.find((g) => g.id === sourceId)
+    if (!source) return
+
+    setGesbs((prev) =>
+      prev.map((g) =>
+        g.id === targetId
+          ? {
+              ...g,
+              slots: [...source.slots],
+              layout: source.layout,
+              status: source.slots.some(Boolean) ? ("loaded" as const) : g.status,
+            }
+          : g,
+      ),
     )
+    void message.success(`${source.name} içeriği ${gesbs.find((g) => g.id === targetId)?.name} GESB'ine kopyalandı.`)
   }
 
   function handleStart(id: string) {
@@ -835,7 +902,7 @@ function VideoControlUnitContent({
           : g,
       ),
     )
-    if (selectedGesbIds.includes(id)) setSelectedVideoIds([])
+    if (selectedGesbId === id) setSelectedVideoIds([])
   }
 
   function handleRemoveSlot(id: string, index: number) {
@@ -859,7 +926,7 @@ function VideoControlUnitContent({
       ),
     )
 
-    if (selectedGesbIds.includes(id)) {
+    if (selectedGesbId === id) {
       setSelectedVideoIds(nextSlots.filter((slot): slot is string => slot !== null))
     }
   }
@@ -1038,6 +1105,7 @@ function VideoControlUnitContent({
                     slotNumber={
                       layout === "quad" && selectedIndex !== -1 ? selectedIndex + 1 : undefined
                     }
+                    orderNumber={recordedIndexById.get(video.id)}
                     onToggle={() => toggleVideo(video.id)}
                   />
                 )
@@ -1076,6 +1144,12 @@ function VideoControlUnitContent({
             <Text type="secondary" style={{ fontSize: 10 }}>
               (1 video = Tekli, 2-4 video = Dörtlü)
             </Text>
+            {copySourceId && (
+              <Text type="warning" style={{ fontSize: 10, marginInlineStart: "auto" }}>
+                Kopyalanacak: {gesbs.find((g) => g.id === copySourceId)?.name} — hedef GESB'e
+                dokunun (iptal için kopya simgesine tekrar dokunun)
+              </Text>
+            )}
           </div>
 
           <div
@@ -1094,8 +1168,11 @@ function VideoControlUnitContent({
                 key={gesb.id}
                 gesb={gesb}
                 videosById={videosById}
-                selected={selectedGesbIds.includes(gesb.id)}
-                onToggleSelect={() => toggleGesbSelect(gesb.id)}
+                selected={selectedGesbId === gesb.id}
+                copySource={copySourceId === gesb.id}
+                copyDisabled={gesb.slots.every((slot) => !slot)}
+                onToggleSelect={() => handleGesbTap(gesb.id)}
+                onCopy={() => handleCopyClick(gesb.id)}
                 onStart={() => handleStart(gesb.id)}
                 onStop={() => handleStop(gesb.id)}
                 onClear={() => handleClear(gesb.id)}
@@ -1148,7 +1225,9 @@ function VideoControlUnitContent({
         <div style={{ width: 1, height: 20, background: token.colorBorderSecondary }} />
 
         <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
-          {selectedGesbIds.length} GESB seçili
+          {selectedGesbId
+            ? `Hedef: ${gesbs.find((g) => g.id === selectedGesbId)?.name}`
+            : "Hedef GESB seçilmedi"}
         </Text>
       </footer>
     </div>
