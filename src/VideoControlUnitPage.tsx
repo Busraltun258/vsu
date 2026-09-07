@@ -17,7 +17,6 @@
  *  geldiğinde "SAHTE VERİ" bölümünün yerini bir API client'ı alır.
  * ════════════════════════════════════════════════════════════════════ */
 
-import { useEffect, useMemo, useState } from "react"
 import {
   CheckOutlined,
   CloseOutlined,
@@ -45,12 +44,13 @@ import {
   Popconfirm,
   Segmented,
   Tag,
-  theme as antdTheme,
-  type ThemeConfig,
   Tooltip,
   Typography,
+  theme as antdTheme,
+  type ThemeConfig,
 } from "antd"
 import dayjs from "dayjs"
+import { useEffect, useMemo, useState } from "react"
 
 const { useToken } = antdTheme
 const { Text } = Typography
@@ -100,14 +100,14 @@ type VcuThemeMode = "dark" | "light"
  * ════════════════════════════════════════════════════════════════════ */
 
 const initialVideos: VcuVideoSource[] = [
-  { id: "v1", name: "Açılış Konuşması", kind: "recorded", duration: "04:12", date: "2026-09-06" },
-  { id: "v2", name: "Sponsor Tanıtım Filmi", kind: "recorded", duration: "01:45", date: "2026-09-02" },
-  { id: "v3", name: "Ürün Lansmanı", kind: "recorded", duration: "06:30", date: "2026-09-05" },
+  { id: "v1", name: "Opcon 1", kind: "recorded", duration: "04:12", date: "2026-09-06" },
+  { id: "v2", name: "Opcon 2", kind: "recorded", duration: "01:45", date: "2026-09-02" },
+  { id: "v3", name: "Opcon 3", kind: "recorded", duration: "06:30", date: "2026-09-05" },
   { id: "v4", name: "Kamera 01 · Ana Sahne", kind: "live" },
   { id: "v5", name: "Sensör 02 · Ana Sahne", kind: "live" },
   { id: "v6", name: "Kamera 03 · Salon Genel", kind: "live" },
-  { id: "v7", name: "Kapanış Filmi", kind: "recorded", duration: "03:05", date: "2026-09-01" },
-  { id: "v8", name: "Röportaj - CEO", kind: "recorded", duration: "08:20", date: "2026-08-15" },
+  { id: "v7", name: "Opcon 4", kind: "recorded", duration: "03:05", date: "2026-09-01" },
+  { id: "v8", name: "Opcon 5", kind: "recorded", duration: "08:20", date: "2026-08-15" },
   { id: "v9", name: "Sensör 04 · Fuaye", kind: "live" },
   {
     id: "v10",
@@ -368,9 +368,29 @@ function VcuVideoRow({ video, selected, slotNumber, orderNumber, onToggle }: Vcu
           </div>
         }
         title={
-          <Text style={{ fontSize: 12, fontWeight: 500 }} ellipsis>
-            {orderNumber !== undefined ? `${orderNumber}. ${video.name}` : video.name}
-          </Text>
+          orderNumber !== undefined ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              <Text style={{ fontSize: 12, fontWeight: 600, flexShrink: 0 }}>Opcon {orderNumber}</Text>
+              <Tag
+                title={video.name}
+                style={{
+                  marginInlineEnd: 0,
+                  fontSize: 10,
+                  lineHeight: "16px",
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {video.name}
+              </Tag>
+            </div>
+          ) : (
+            <Text style={{ fontSize: 12, fontWeight: 500 }} ellipsis>
+              {video.name}
+            </Text>
+          )
         }
         description={
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>
@@ -831,10 +851,12 @@ function VideoControlUnitContent({
    *  - Kopya modu aktifse (copySourceId dolu): bu GESB HEDEF olur, kaynağın
    *    içeriği doğrudan buraya yapıştırılır ve kopya modu kapanır. Kaynağa
    *    tekrar dokunmak kopya modunu iptal eder.
-   *  - Değilse: bu GESB yeni "hedef" olur. Her seferinde TEMİZ başlar — önceki
-   *    hedefte seçili olan videolar buraya taşınmaz, kullanıcı soldan yeniden
-   *    seçer. Zaten hedef olan karta TEKRAR dokunmak hiçbir şey yapmaz —
-   *    aksi halde soldaki kütüphanede az önce yapılan seçim sıfırlanıyordu.
+   *  - Değilse: bu GESB yeni "hedef" olur ve soldaki kütüphane HER SEFERİNDE
+   *    o GESB'in KENDİ o anki içeriğini yansıtır (dolu slotlar seçili görünür).
+   *    Böylece hangi GESB'e gidilirse gidilsin orada ne varsa onu görüp
+   *    düzenleyebilirsin — ama önceki hedeflenen GESB'nin seçimi asla buraya
+   *    sızmaz, her GESB kendi gerçek durumundan okunur. Zaten hedef olan
+   *    karta TEKRAR dokunmak hiçbir şey yapmaz.
    */
   function handleGesbTap(id: string) {
     if (copySourceId) {
@@ -845,8 +867,9 @@ function VideoControlUnitContent({
 
     if (selectedGesbId === id) return
 
+    const target = gesbs.find((g) => g.id === id)
     setSelectedGesbId(id)
-    setSelectedVideoIds([])
+    setSelectedVideoIds(target ? target.slots.filter((slot): slot is string => slot !== null) : [])
   }
 
   /** Kopya simgesine dokunma: bu GESB'i kopya kaynağı yapar (tekrar dokunmak iptal eder). */
@@ -867,11 +890,11 @@ function VideoControlUnitContent({
       prev.map((g) =>
         g.id === targetId
           ? {
-              ...g,
-              slots: [...source.slots],
-              layout: source.layout,
-              status: source.slots.some(Boolean) ? ("loaded" as const) : g.status,
-            }
+            ...g,
+            slots: [...source.slots],
+            layout: source.layout,
+            status: source.slots.some(Boolean) ? ("loaded" as const) : g.status,
+          }
           : g,
       ),
     )
@@ -898,11 +921,11 @@ function VideoControlUnitContent({
       prev.map((g) =>
         g.id === id
           ? {
-              ...g,
-              slots: [null, null, null, null],
-              layout: "single" as const,
-              status: "idle" as const,
-            }
+            ...g,
+            slots: [null, null, null, null],
+            layout: "single" as const,
+            status: "idle" as const,
+          }
           : g,
       ),
     )
@@ -921,11 +944,11 @@ function VideoControlUnitContent({
       prev.map((g) =>
         g.id === id
           ? {
-              ...g,
-              slots: nextSlots,
-              layout: remaining > 1 ? ("quad" as const) : ("single" as const),
-              status: remaining === 0 ? ("idle" as const) : g.status,
-            }
+            ...g,
+            slots: nextSlots,
+            layout: remaining > 1 ? ("quad" as const) : ("single" as const),
+            status: remaining === 0 ? ("idle" as const) : g.status,
+          }
           : g,
       ),
     )
