@@ -1,17 +1,15 @@
 /**
  * ════════════════════════════════════════════════════════════════════
- *  VIDEO KONTROL ÜNİTESİ (VCU) — TASARIM MOCKUP'I
+ *  VIDEO KONTROL ÜNİTESİ (VCU)
  *
  *  10.1" dokunmatik tablet üzerinden GESB'lere (büyük ekranlara) video
- *  dağıtımı yapan kiosk arayüzü. Ant Design ile kurulu, projenin geri
- *  kalanından (uygulamanın kendi @rei/shared temasından) tamamen
- *  bağımsız — <ConfigProvider> bu dosyaya scoped, global temayı
- *  etkilemiyor.
+ *  dağıtımı yapan kiosk arayüzü. apps/vsu'nun TEK sayfası: rota yok,
+ *  entry.tsx doğrudan bunu monte eder.
  *
  *  Tek dosyada toplandı: tüm tipler, sahte veri, tarih filtresi, tema
  *  ve bileşenler burada — antd/@ant-design/icons/dayjs dışında hiçbir
- *  iç referansı yok. Gerçek control-screen akışını (ControlScreen.tsx)
- *  DEĞİŞTİRMEZ, /mockup rotasında ayrı bir sayfa olarak durur.
+ *  iç referansı yok. Kendi <ConfigProvider>'ını ve açık/koyu paletini
+ *  taşır, bu yüzden uygulamada global bir tema sağlayıcısı kurulmaz.
  *
  *  Backend'e bağlı değil — gerçek bir video matrix/switcher entegrasyonu
  *  geldiğinde "SAHTE VERİ" bölümünün yerini bir API client'ı alır.
@@ -41,7 +39,6 @@ import {
   DatePicker,
   Input,
   List,
-  Popconfirm,
   Segmented,
   Tag,
   Tooltip,
@@ -50,7 +47,7 @@ import {
   type ThemeConfig,
 } from "antd"
 import dayjs from "dayjs"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type CSSProperties } from "react"
 
 const { useToken } = antdTheme
 const { Text } = Typography
@@ -94,6 +91,17 @@ type VcuDateRange = {
 }
 
 type VcuThemeMode = "dark" | "light"
+
+/**
+ * ADU (operatörün kendi ekranı) tek bir "hedef" — bir GESB gibi ama kimliği,
+ * konumu ve çevrimdışı hâli yok; hep var, hep kendi ekranı. Aynı slot/layout
+ * şeklini kullanıyor ki VcuSlotsPreview'ı GESB kartıyla paylaşabilelim.
+ */
+type VcuOwnScreen = {
+  status: "idle" | "loaded" | "live"
+  layout: VcuLayout
+  slots: (string | null)[]
+}
 
 /* ════════════════════════════════════════════════════════════════════
  *  SAHTE VERİ
@@ -448,6 +456,199 @@ function slotVideo(
   return videosById.get(id) ?? null
 }
 
+/* ════════════════════════════════════════════════════════════════════
+ *  SLOT ÖNİZLEME — GESB kartı ve "Bu Ekran" (ADU) kartı bunu paylaşır
+ * ════════════════════════════════════════════════════════════════════ */
+
+type VcuSlotsPreviewProps = {
+  slots: (string | null)[]
+  videosById: Map<string, VcuVideoSource>
+  /** Boşken vurgulanmalı mı (GESB'de "hedef seçili" demek; ADU'da hep false). */
+  emptyActive: boolean
+  emptyHint: string
+  /** Yayındayken bölme kaldırmayı kilitler (bkz. sayfa düzeyi kısıt). */
+  removeDisabled: boolean
+  onRemoveSlot: (index: number) => void
+  /**
+   * true ise dış kapsayıcının verdiği tüm yüksekliği doldurur (ADU'nun tek
+   * "Bu Ekran" kartı) — false ise GESB grid kartlarındaki sabit 108px önizleme.
+   */
+  fill?: boolean
+}
+
+function VcuSlotsPreview({
+  slots,
+  videosById,
+  emptyActive,
+  emptyHint,
+  removeDisabled,
+  onRemoveSlot,
+  fill,
+}: VcuSlotsPreviewProps) {
+  const { token } = useToken()
+  const filledCount = slots.filter(Boolean).length
+  // height:"100%" bir flex-column içindeki flex item'da güvenilir çözülmüyor;
+  // gerçekten kalan alanı doldurmak için flex-grow kullanıyoruz (bkz. fill notu).
+  const boxSize: CSSProperties = fill ? { flex: 1, minHeight: 0 } : { height: 108 }
+
+  return (
+    <div
+      style={
+        fill
+          ? { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }
+          : { minHeight: 108, display: "flex", flexDirection: "column", justifyContent: "center" }
+      }
+    >
+      {filledCount === 0 && (
+        <div
+          style={{
+            ...boxSize,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+            borderRadius: token.borderRadius,
+            border: `2px dashed ${emptyActive ? token.colorPrimary : token.colorBorderSecondary}`,
+            background: emptyActive ? token.colorPrimaryBg : token.colorFillTertiary,
+          }}
+        >
+          <PlusOutlined style={{ color: token.colorTextTertiary }} />
+          <Text type="secondary" style={{ fontSize: 11, textAlign: "center", padding: "0 8px" }}>
+            {emptyHint}
+          </Text>
+        </div>
+      )}
+
+      {filledCount === 1 &&
+        (() => {
+          const video = slotVideo(slots[0] ?? null, videosById)
+          if (!video) return null
+          const isLiveVideo = video.kind === "live"
+          return (
+            <div
+              style={{
+                ...boxSize,
+                display: "flex",
+                flexDirection: "column",
+                // fill modunda space-between, ortadaki başlığı kutunun tam
+                // dikey merkezine iterdi (kutu artık kocaman) — içerik yerine
+                // hep en üstte kümelensin diye flex-start + gap kullanıyoruz.
+                justifyContent: fill ? "flex-start" : "space-between",
+                gap: fill ? 6 : undefined,
+                borderRadius: token.borderRadius,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                background: token.colorBgContainer,
+                padding: 8,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <Text
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 600,
+                    letterSpacing: 0.5,
+                    textTransform: "uppercase",
+                    color: isLiveVideo ? token.colorError : token.colorPrimary,
+                  }}
+                >
+                  {isLiveVideo ? "● Canlı Akış" : "Kayıtlı · Tekli (1x1)"}
+                </Text>
+                <Button
+                  type="text"
+                  disabled={removeDisabled}
+                  icon={<CloseOutlined style={{ fontSize: 13 }} />}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onRemoveSlot(0)
+                  }}
+                />
+              </div>
+              <Text ellipsis style={{ fontSize: 12, fontWeight: 500 }}>
+                {video.name}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 10 }}>
+                {video.duration ? `Süre: ${video.duration}` : "Gerçek zamanlı"}
+              </Text>
+            </div>
+          )
+        })()}
+
+      {filledCount > 1 && (
+        <div
+          style={{
+            ...boxSize,
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gridTemplateRows: fill ? "1fr 1fr" : undefined,
+            gap: 8,
+          }}
+        >
+          {slots.map((slotId, index) => {
+            const video = slotVideo(slotId, videosById)
+            if (!video) {
+              return (
+                <div
+                  key={index}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderRadius: token.borderRadiusSM,
+                    border: `1px dashed ${token.colorBorderSecondary}`,
+                    background: token.colorFillTertiary,
+                    fontSize: 10,
+                    color: token.colorTextTertiary,
+                  }}
+                >
+                  Boş
+                </div>
+              )
+            }
+            return (
+              <div
+                key={video.id}
+                style={{
+                  display: "flex",
+                  // Hücre (grid item) fill modunda tam yüksekliğe geriliyor;
+                  // alignItems:"center" etiketi/çarpıyı hücrenin dikey ortasına
+                  // düşürüyordu — sabit üstte kalması için flex-start.
+                  alignItems: fill ? "flex-start" : "center",
+                  justifyContent: "space-between",
+                  gap: 4,
+                  borderRadius: token.borderRadiusSM,
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  background: token.colorBgContainer,
+                  padding: fill ? "8px 10px" : "4px 6px",
+                  minWidth: 0,
+                }}
+              >
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontFamily: "monospace", fontSize: 8, color: token.colorTextTertiary }}>
+                    #{index + 1} {video.kind === "live" ? "CANLI" : "KAYITLI"}
+                  </div>
+                  <Text ellipsis style={{ fontSize: 11, lineHeight: 1.2, fontWeight: 500 }}>
+                    {video.name}
+                  </Text>
+                </div>
+                <Button
+                  type="text"
+                  disabled={removeDisabled}
+                  icon={<CloseOutlined style={{ fontSize: 12 }} />}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onRemoveSlot(index)
+                  }}
+                />
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function VcuGesbCard({
   gesb,
   videosById,
@@ -462,6 +663,7 @@ function VcuGesbCard({
   onRemoveSlot,
 }: VcuGesbCardProps) {
   const { token } = useToken()
+  const { modal } = AntApp.useApp()
   const isOffline = gesb.status === "offline"
   const isLive = gesb.status === "live"
   const isLoaded = gesb.status === "loaded"
@@ -531,140 +733,14 @@ function VcuGesbCard({
       }
       extra={modeTag}
     >
-      {/* Adaptif içerik alanı */}
-      <div style={{ minHeight: 108, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        {filledCount === 0 && (
-          <div
-            style={{
-              height: 108,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 4,
-              borderRadius: token.borderRadius,
-              border: `2px dashed ${selected ? token.colorPrimary : token.colorBorderSecondary}`,
-              background: selected ? token.colorPrimaryBg : token.colorFillTertiary,
-            }}
-          >
-            <PlusOutlined style={{ color: token.colorTextTertiary }} />
-            <Text type="secondary" style={{ fontSize: 11, textAlign: "center", padding: "0 8px" }}>
-              {selected ? "Video seçin, buraya yüklenecek" : "Hedeflemek için dokunun"}
-            </Text>
-          </div>
-        )}
-
-        {filledCount === 1 &&
-          (() => {
-            const video = slotVideo(gesb.slots[0] ?? null, videosById)
-            if (!video) return null
-            const isLiveVideo = video.kind === "live"
-            return (
-              <div
-                style={{
-                  height: 108,
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "space-between",
-                  borderRadius: token.borderRadius,
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                  background: token.colorBgContainer,
-                  padding: 8,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <Text
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 600,
-                      letterSpacing: 0.5,
-                      textTransform: "uppercase",
-                      color: isLiveVideo ? token.colorError : token.colorPrimary,
-                    }}
-                  >
-                    {isLiveVideo ? "● Canlı Akış" : "Kayıtlı · Tekli (1x1)"}
-                  </Text>
-                  <Button
-                    type="text"
-                    disabled={isLive}
-                    icon={<CloseOutlined style={{ fontSize: 13 }} />}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onRemoveSlot(0)
-                    }}
-                  />
-                </div>
-                <Text ellipsis style={{ fontSize: 12, fontWeight: 500 }}>
-                  {video.name}
-                </Text>
-                <Text type="secondary" style={{ fontSize: 10 }}>
-                  {video.duration ? `Süre: ${video.duration}` : "Gerçek zamanlı"}
-                </Text>
-              </div>
-            )
-          })()}
-
-        {filledCount > 1 && (
-          <div style={{ height: 108, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            {gesb.slots.map((slotId, index) => {
-              const video = slotVideo(slotId, videosById)
-              if (!video) {
-                return (
-                  <div
-                    key={index}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderRadius: token.borderRadiusSM,
-                      border: `1px dashed ${token.colorBorderSecondary}`,
-                      background: token.colorFillTertiary,
-                      fontSize: 10,
-                      color: token.colorTextTertiary,
-                    }}
-                  >
-                    Boş
-                  </div>
-                )
-              }
-              return (
-                <div
-                  key={video.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 4,
-                    borderRadius: token.borderRadiusSM,
-                    border: `1px solid ${token.colorBorderSecondary}`,
-                    background: token.colorBgContainer,
-                    padding: "4px 6px",
-                    minWidth: 0,
-                  }}
-                >
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontFamily: "monospace", fontSize: 8, color: token.colorTextTertiary }}>
-                      #{index + 1} {video.kind === "live" ? "CANLI" : "KAYITLI"}
-                    </div>
-                    <Text ellipsis style={{ fontSize: 11, lineHeight: 1.2, fontWeight: 500 }}>
-                      {video.name}
-                    </Text>
-                  </div>
-                  <Button
-                    type="text"
-                    disabled={isLive}
-                    icon={<CloseOutlined style={{ fontSize: 12 }} />}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onRemoveSlot(index)
-                    }}
-                  />
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      <VcuSlotsPreview
+        slots={gesb.slots}
+        videosById={videosById}
+        emptyActive={selected}
+        emptyHint={selected ? "Video seçin, buraya yüklenecek" : "Hedeflemek için dokunun"}
+        removeDisabled={isLive}
+        onRemoveSlot={onRemoveSlot}
+      />
 
       {/* Alt buton çubuğu — Başlat, Durdur, Temizle */}
       {!isOffline && (
@@ -712,7 +788,14 @@ function VcuGesbCard({
             disabled={filledCount === 0 || isLive}
             onClick={(event) => {
               event.stopPropagation()
-              onClear()
+              modal.confirm({
+                title: "Bu GESB temizlensin mi?",
+                content: `${gesb.name} üzerindeki içerik kaldırılacak.`,
+                okText: "Temizle",
+                cancelText: "Vazgeç",
+                okButtonProps: { danger: true },
+                onOk: onClear,
+              })
             }}
           >
             Temizle
@@ -724,8 +807,191 @@ function VcuGesbCard({
 }
 
 /* ════════════════════════════════════════════════════════════════════
+ *  "BU EKRAN" KARTI — ADU görünümü (>1250px). GESB grid'inin yerine geçer:
+ *  hedefleme/kopyalama yok, tek bir hedef var — operatörün kendi ekranı.
+ * ════════════════════════════════════════════════════════════════════ */
+
+type VcuOwnScreenCardProps = {
+  ownScreen: VcuOwnScreen
+  videosById: Map<string, VcuVideoSource>
+  onStart: () => void
+  onStop: () => void
+  onClear: () => void
+  onRemoveSlot: (index: number) => void
+}
+
+function VcuOwnScreenCard({
+  ownScreen,
+  videosById,
+  onStart,
+  onStop,
+  onClear,
+  onRemoveSlot,
+}: VcuOwnScreenCardProps) {
+  const { token } = useToken()
+  const { modal } = AntApp.useApp()
+  const isLive = ownScreen.status === "live"
+  const filledCount = ownScreen.slots.filter(Boolean).length
+
+  const modeTag =
+    filledCount === 0 ? (
+      <Tag color="default">Boş</Tag>
+    ) : filledCount === 1 ? (
+      <Tag color="blue">Tekli (1x1)</Tag>
+    ) : (
+      <Tag color="warning">Dörtlü ({filledCount}/4)</Tag>
+    )
+
+  // antd <Card> bilerek KULLANILMADI: .ant-card-body varsayılan olarak flex
+  // konteyner değil, bu yüzden içindeki VcuSlotsPreview'in flex:1 (fill)
+  // yüksekliği hiçbir işe yaramıyordu — içerik kartın ortasında küçük kalıyordu.
+  // Düz div'lerle tüm flex zincirini kendimiz kuruyoruz ki tam yüksekliği kaplasın.
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        borderRadius: token.borderRadius,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorBgContainer,
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          padding: "10px 14px",
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, minWidth: 0 }}>
+          <span
+            className={isLive ? "vcu-live-dot" : undefined}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 999,
+              background: isLive ? token.colorError : filledCount > 0 ? token.colorWarning : token.colorTextQuaternary,
+              display: "inline-block",
+              flexShrink: 0,
+            }}
+          />
+          <span>Bu Ekran</span>
+          <Text type="secondary" style={{ fontWeight: 400, fontSize: 11 }}>
+            (ADU — yalnızca kendi ekranın)
+          </Text>
+        </div>
+        {modeTag}
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: 14 }}>
+        <VcuSlotsPreview
+          slots={ownScreen.slots}
+          videosById={videosById}
+          emptyActive={false}
+          emptyHint="Soldan video seçin, bu ekranda oynayacak"
+          removeDisabled={isLive}
+          onRemoveSlot={onRemoveSlot}
+          fill
+        />
+      </div>
+
+      <div
+        style={{
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 14px",
+          borderTop: `1px solid ${token.colorBorderSecondary}`,
+        }}
+      >
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            disabled={filledCount === 0}
+            icon={<PlayCircleFilled />}
+            style={
+              isLive
+                ? { color: token.colorSuccess, borderColor: token.colorSuccess }
+                : { background: token.colorSuccess, borderColor: token.colorSuccess, color: "#fff" }
+            }
+            onClick={() => {
+              if (!isLive) onStart()
+            }}
+          >
+            {isLive ? "Oynatılıyor" : "Başlat"}
+          </Button>
+
+          <Button disabled={!isLive} icon={<PauseOutlined />} onClick={onStop}>
+            Durdur
+          </Button>
+        </div>
+
+        <Button
+          type="text"
+          disabled={filledCount === 0 || isLive}
+          onClick={() => {
+            modal.confirm({
+              title: "Bu ekran temizlensin mi?",
+              content: "Yüklü içerik kaldırılacak.",
+              okText: "Temizle",
+              cancelText: "Vazgeç",
+              okButtonProps: { danger: true },
+              onOk: onClear,
+            })
+          }}
+        >
+          Temizle
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/* ════════════════════════════════════════════════════════════════════
  *  SAYFA
  * ════════════════════════════════════════════════════════════════════ */
+
+/** Bu genişlikten büyük ekranlarda ADU (operatörün kendi ekranı) görünümüne geçilir. */
+const ADU_BREAKPOINT = 1250
+
+/**
+ * "auto" genişliğe bakar (varsayılan). Operatör bir pencereyi ikinci monitöre
+ * taşırken/yeniden boyutlandırırken genişlik eşiği sessizce aşılıp görünüm
+ * beklenmedik anda değişebiliyordu — "tablet"/"own" bunu manuel sabitler.
+ */
+type VcuViewOverride = "auto" | "tablet" | "own"
+
+const VIEW_OVERRIDE_STORAGE_KEY = "vsu:vcu-mockup-view-override"
+
+function readStoredViewOverride(): VcuViewOverride {
+  try {
+    const stored = window.localStorage.getItem(VIEW_OVERRIDE_STORAGE_KEY)
+    return stored === "tablet" || stored === "own" ? stored : "auto"
+  } catch {
+    return "auto"
+  }
+}
+
+function useIsAduView(override: VcuViewOverride): boolean {
+  const [isWide, setIsWide] = useState(() => window.innerWidth > ADU_BREAKPOINT)
+
+  useEffect(() => {
+    const handleResize = () => setIsWide(window.innerWidth > ADU_BREAKPOINT)
+    window.addEventListener("resize", handleResize)
+    return () => window.removeEventListener("resize", handleResize)
+  }, [])
+
+  if (override === "tablet") return false
+  if (override === "own") return true
+  return isWide
+}
 
 const MAX_SELECTABLE_VIDEOS = 4
 
@@ -758,18 +1024,51 @@ function VideoControlUnitContent({
   onModeChange: (mode: VcuThemeMode) => void
 }) {
   const { token } = useToken()
-  const { message } = AntApp.useApp()
+  const { message, modal } = AntApp.useApp()
+
+  /** "Oto" seçiliyken genişliğe göre; "Tablet"/"Kendi Ekranım" seçiliyken sabit. */
+  const [viewOverride, setViewOverride] = useState<VcuViewOverride>(readStoredViewOverride)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(VIEW_OVERRIDE_STORAGE_KEY, viewOverride)
+    } catch {
+      // localStorage kapalıysa sessizce geç
+    }
+  }, [viewOverride])
+
+  /**
+   * >1250px (ya da manuel "Kendi Ekranım" seçimi): ADU görünümü. Aynı sayfa,
+   * aynı sol kütüphane/tema/bileşenler — sağ taraf GESB grid'i yerine tek bir
+   * "Bu Ekran" kartına dönüşür: hedefleme/kopyalama yok, video seçimi
+   * doğrudan kendi ekranına yüklenir (bkz. toggleVideo).
+   */
+  const isAduView = useIsAduView(viewOverride)
 
   const [gesbs, setGesbs] = useState(initialGesbs)
+  const [ownScreen, setOwnScreen] = useState<VcuOwnScreen>({
+    status: "idle",
+    layout: "single",
+    slots: [null, null, null, null],
+  })
   const [search, setSearch] = useState("")
   const [kindFilter, setKindFilter] = useState<VcuVideoKind | "all">("all")
   const [dateRange, setDateRange] = useState(DEFAULT_DATE_RANGE)
   const [selectedVideoIds, setSelectedVideoIds] = useState<string[]>([])
-  /** O an hedeflenen TEK GESB — aynı anda birden fazla GESB hedeflenemez. */
+  /** O an hedeflenen TEK GESB — aynı anda birden fazla GESB hedeflenemez. ADU'da kullanılmaz. */
   const [selectedGesbId, setSelectedGesbId] = useState<string | null>(null)
   /** Kopya modunda "kaynak" olarak işaretlenen GESB. Dolu olduğunda bir sonraki
    *  GESB dokunuşu hedef seçmek yerine bu GESB'in içeriğini oraya yapıştırır. */
   const [copySourceId, setCopySourceId] = useState<string | null>(null)
+
+  // Tablet <-> ADU arası geçişte (pencere yeniden boyutlanınca) staging'i
+  // sıfırla — bir GESB için seçilmiş videoların yanlışlıkla "Bu Ekran"a ya da
+  // tersine sızmaması için.
+  useEffect(() => {
+    setSelectedVideoIds([])
+    setSelectedGesbId(null)
+    setCopySourceId(null)
+  }, [isAduView])
 
   // Tekli/Dörtlü artık ayrı bir seçim değil — kaç video seçildiğinden
   // türetiliyor. Operatörün ayrıca mod seçmesine gerek yok, biz zaten
@@ -828,6 +1127,16 @@ function VideoControlUnitContent({
     )
   }
 
+  /** ADU'da hedefleme adımı yok — "Bu Ekran" tek hedef, seçim doğrudan ona yüklenir. */
+  function pushSelectionToOwnScreen(videoIds: string[]) {
+    if (videoIds.length === 0) return
+
+    const slots = [0, 1, 2, 3].map((i) => videoIds[i] ?? null)
+    const nextLayout: VcuLayout = videoIds.length > 1 ? "quad" : "single"
+
+    setOwnScreen((prev) => ({ ...prev, layout: nextLayout, slots, status: "loaded" }))
+  }
+
   function toggleVideo(id: string) {
     const isSelected = selectedVideoIds.includes(id)
 
@@ -843,7 +1152,38 @@ function VideoControlUnitContent({
     }
 
     setSelectedVideoIds(next)
-    if (selectedGesbId) pushSelectionToGesb(selectedGesbId, next)
+    if (isAduView) {
+      pushSelectionToOwnScreen(next)
+    } else if (selectedGesbId) {
+      pushSelectionToGesb(selectedGesbId, next)
+    }
+  }
+
+  function handleOwnStart() {
+    setOwnScreen((prev) => ({ ...prev, status: "live" }))
+  }
+
+  function handleOwnStop() {
+    setOwnScreen((prev) => ({ ...prev, status: "loaded" }))
+  }
+
+  function handleOwnClear() {
+    setOwnScreen({ status: "idle", layout: "single", slots: [null, null, null, null] })
+    setSelectedVideoIds([])
+  }
+
+  function handleOwnRemoveSlot(index: number) {
+    const nextSlots = [...ownScreen.slots]
+    nextSlots[index] = null
+    const remaining = nextSlots.filter(Boolean).length
+
+    setOwnScreen((prev) => ({
+      ...prev,
+      slots: nextSlots,
+      layout: remaining > 1 ? ("quad" as const) : ("single" as const),
+      status: remaining === 0 ? ("idle" as const) : prev.status,
+    }))
+    setSelectedVideoIds(nextSlots.filter((slot): slot is string => slot !== null))
   }
 
   /**
@@ -1000,11 +1340,23 @@ function VideoControlUnitContent({
             Video Kontrol Ünitesi
           </Text>
           <Text type="secondary" style={{ fontSize: 11 }}>
-            ({gesbs.length} Ekran Matrisi)
+            {isAduView ? "(ADU — Kendi Ekranın)" : `(${gesbs.length} Ekran Matrisi)`}
           </Text>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Tooltip title="Görünüm genişliğe göre otomatik değişir; pencere yeniden boyutlandığında beklenmedik geçişi önlemek için sabitleyebilirsiniz.">
+            <Segmented
+              value={viewOverride}
+              onChange={(value) => setViewOverride(value as VcuViewOverride)}
+              options={[
+                { label: "Oto", value: "auto" },
+                { label: "Tablet", value: "tablet" },
+                { label: "Ekranım", value: "own" },
+              ]}
+            />
+          </Tooltip>
+
           <Button
             icon={mode === "dark" ? <SunOutlined /> : <MoonOutlined />}
             onClick={() => onModeChange(mode === "dark" ? "light" : "dark")}
@@ -1012,25 +1364,27 @@ function VideoControlUnitContent({
             {mode === "dark" ? "Açık Mod" : "Koyu Mod"}
           </Button>
 
-          <Popconfirm
-            title="Tüm yayınlar durdurulsun mu?"
-            description={`Şu an canlı yayında olan ${liveGesbCount} GESB yayından alınacak.`}
-            okText="Tümünü Durdur"
-            cancelText="Vazgeç"
-            okButtonProps={{ danger: true }}
-            onConfirm={handleStopAll}
-            disabled={liveGesbCount === 0}
-          >
+          {!isAduView && (
             <Badge count={liveGesbCount} size="small">
               <Button
                 danger
                 icon={<PoweroffOutlined />}
                 disabled={liveGesbCount === 0}
+                onClick={() => {
+                  modal.confirm({
+                    title: "Tüm yayınlar durdurulsun mu?",
+                    content: `Şu an canlı yayında olan ${liveGesbCount} GESB yayından alınacak.`,
+                    okText: "Tümünü Durdur",
+                    cancelText: "Vazgeç",
+                    okButtonProps: { danger: true },
+                    onOk: handleStopAll,
+                  })
+                }}
               >
                 Tümünü Durdur
               </Button>
             </Badge>
-          </Popconfirm>
+          )}
         </div>
       </header>
 
@@ -1150,7 +1504,9 @@ function VideoControlUnitContent({
               borderTop: `1px solid ${token.colorBorderSecondary}`,
             }}
           >
-            Dokunarak seçin, hedeflediğiniz GESB'e otomatik yüklenir
+            {isAduView
+              ? "Dokunarak seçin, bu ekranda oynayacak"
+              : "Dokunarak seçin, hedeflediğiniz GESB'e otomatik yüklenir"}
           </div>
         </section>
 
@@ -1166,12 +1522,12 @@ function VideoControlUnitContent({
             }}
           >
             <Text strong style={{ fontSize: 12 }}>
-              GESB Büyük Ekranları
+              {isAduView ? "Bu Ekran" : "GESB Büyük Ekranları"}
             </Text>
             <Text type="secondary" style={{ fontSize: 10 }}>
               (1 video = Tekli, 2-4 video = Dörtlü)
             </Text>
-            {copySourceId && (
+            {!isAduView && copySourceId && (
               <Text type="warning" style={{ fontSize: 10, marginInlineStart: "auto" }}>
                 Kopyalanacak: {gesbs.find((g) => g.id === copySourceId)?.name} — hedef GESB'e
                 dokunun (iptal için kopya simgesine tekrar dokunun)
@@ -1179,34 +1535,54 @@ function VideoControlUnitContent({
             )}
           </div>
 
-          <div
-            style={{
-              flex: 1,
-              overflowY: "auto",
-              padding: 12,
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-              gap: 12,
-              alignContent: "start",
-            }}
-          >
-            {gesbs.map((gesb) => (
-              <VcuGesbCard
-                key={gesb.id}
-                gesb={gesb}
+          {isAduView ? (
+            <div
+              style={{
+                flex: 1,
+                overflow: "hidden",
+                padding: 16,
+                display: "flex",
+              }}
+            >
+              <VcuOwnScreenCard
+                ownScreen={ownScreen}
                 videosById={videosById}
-                selected={selectedGesbId === gesb.id}
-                copySource={copySourceId === gesb.id}
-                copyDisabled={gesb.slots.every((slot) => !slot)}
-                onToggleSelect={() => handleGesbTap(gesb.id)}
-                onCopy={() => handleCopyClick(gesb.id)}
-                onStart={() => handleStart(gesb.id)}
-                onStop={() => handleStop(gesb.id)}
-                onClear={() => handleClear(gesb.id)}
-                onRemoveSlot={(index) => handleRemoveSlot(gesb.id, index)}
+                onStart={handleOwnStart}
+                onStop={handleOwnStop}
+                onClear={handleOwnClear}
+                onRemoveSlot={handleOwnRemoveSlot}
               />
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: 12,
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+                gap: 12,
+                alignContent: "start",
+              }}
+            >
+              {gesbs.map((gesb) => (
+                <VcuGesbCard
+                  key={gesb.id}
+                  gesb={gesb}
+                  videosById={videosById}
+                  selected={selectedGesbId === gesb.id}
+                  copySource={copySourceId === gesb.id}
+                  copyDisabled={gesb.slots.every((slot) => !slot)}
+                  onToggleSelect={() => handleGesbTap(gesb.id)}
+                  onCopy={() => handleCopyClick(gesb.id)}
+                  onStart={() => handleStart(gesb.id)}
+                  onStop={() => handleStop(gesb.id)}
+                  onClear={() => handleClear(gesb.id)}
+                  onRemoveSlot={(index) => handleRemoveSlot(gesb.id, index)}
+                />
+              ))}
+            </div>
+          )}
         </aside>
       </div>
 
@@ -1252,9 +1628,15 @@ function VideoControlUnitContent({
         <div style={{ width: 1, height: 20, background: token.colorBorderSecondary }} />
 
         <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
-          {selectedGesbId
-            ? `Hedef: ${gesbs.find((g) => g.id === selectedGesbId)?.name}`
-            : "Hedef GESB seçilmedi"}
+          {isAduView
+            ? ownScreen.status === "live"
+              ? "Bu ekran: Oynatılıyor"
+              : ownScreen.status === "loaded"
+                ? "Bu ekran: Yüklü"
+                : "Bu ekran: Boş"
+            : selectedGesbId
+              ? `Hedef: ${gesbs.find((g) => g.id === selectedGesbId)?.name}`
+              : "Hedef GESB seçilmedi"}
         </Text>
       </footer>
     </div>
