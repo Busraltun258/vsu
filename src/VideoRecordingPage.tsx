@@ -375,21 +375,21 @@ function VcuRecordCard({
   return (
     <Card
       size="small"
-      // Kart, ızgara satırının yüksekliğine oturur; gövdesi de flex olur ki
-      // içerik yayılsın ve eylem çubuğu hep altta kalsın. antd'nin
-      // .ant-card-body'si varsayılan olarak flex DEĞİL — styles.body ile
-      // açıkça çeviriyoruz (GESB kartındaki ile aynı yaklaşım).
+      // Kart ızgara satırının yüksekliğine gerilir (aynı satırdaki kartların
+      // düğmeleri hizalı dursun diye) ama İÇERİK ASLA KIRPILMAZ:
+      // `overflow: hidden` ve `minHeight: 0` bilerek yok — ikisi birlikte
+      // gövdenin içeriğinden küçülmesine izin veriyor ve dar sütunda önce
+      // süre kutuları, sonra "Başlat" düğmesi kesiliyordu.
       style={{
         height: "100%",
         display: "flex",
         flexDirection: "column",
-        overflow: "hidden",
         opacity: isOffline ? 0.6 : 1,
         borderColor: recording ? token.colorError : undefined,
         background: recording ? token.colorErrorBg : undefined,
       }}
       styles={{
-        body: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },
+        body: { flex: 1, display: "flex", flexDirection: "column" },
       }}
       title={
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
@@ -405,7 +405,7 @@ function VcuRecordCard({
         </Tag>
       }
     >
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
         {recording ? (
           <>
             <RecordCounter recording={recording} now={now} />
