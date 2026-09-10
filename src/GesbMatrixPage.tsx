@@ -151,28 +151,14 @@ function VcuGesbCard({
       hoverable={!isOffline}
       onClick={() => !isOffline && onToggleSelect()}
       size="small"
-      // Kart, ızgara satırının yüksekliğine oturur; gövdesi de flex olur ki
-      // içindeki önizleme kalan alanı doldursun. antd'nin .ant-card-body'si
-      // varsayılan olarak flex DEĞİL — styles.body ile açıkça çeviriyoruz,
-      // yoksa fill modundaki önizleme yüksekliği hiçbir işe yaramaz
-      // (aynı sorun ADU kartında Card'ı tamamen bırakmamıza yol açmıştı).
+      // Kart kendi içeriği kadar yüksek. Izgara artık satırları eşit
+      // paylaştırmıyor (sığmayan kart alt satıra geçiyor), o yüzden kartı
+      // satır yüksekliğine germeye gerek yok.
       style={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
         opacity: isOffline ? 0.6 : 1,
         cursor: isOffline ? "not-allowed" : "pointer",
         borderColor: copySource ? token.colorWarning : selected ? token.colorPrimary : undefined,
         background: copySource ? token.colorWarningBg : selected ? token.colorPrimaryBg : undefined,
-      }}
-      styles={{
-        body: {
-          flex: 1,
-          minHeight: 0,
-          display: "flex",
-          flexDirection: "column",
-        },
       }}
       title={
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
@@ -230,9 +216,6 @@ function VcuGesbCard({
         </div>
       }
     >
-      {/* fill: önizleme kartın kalan yüksekliğini doldurur. Sabit 108px
-          kullanılsaydı 3 kart bir sütuna sığmazdı (bkz. ızgaradaki
-          minmax(0,1fr) satırlar). */}
       <VcuSlotsPreview
         slots={gesb.slots}
         videosById={videosById}
@@ -240,7 +223,6 @@ function VcuGesbCard({
         emptyHint={selected ? "Video seçin, buraya yüklenecek" : "Hedeflemek için dokunun"}
         removeDisabled={isLive}
         onRemoveSlot={onRemoveSlot}
-        fill
         activeSlotIndex={isRecordedContent ? activeSlotIndex : null}
         onSelectSlot={isRecordedContent ? setActiveSlotIndex : undefined}
       />
@@ -700,11 +682,9 @@ export function GesbMatrixPage({
             )}
           </div>
 
-          {/* Kartlar ALT ALTA 3, dolunca yeni sütuna geçer ve YANA kaydırılır.
-              Satır yüksekliği max-content: bir kartta oynatma paneli açılınca
-              (bkz. transportOpen) kart uzar, kırpılmaz — 3'ü birden sığmazsa
-              dikey kaydırma da devreye girer. Sütun genişliği sabit tutuluyor,
-              yoksa yatay kaydırmada 1fr anlamsızlaşır. */}
+          {/* Sığmayan kart bir ALT SATIRA geçer, yatay kaydırma yok.
+              auto-fill + minmax: ekran genişledikçe sütun sayısı kendiliğinden
+              artar, daraldıkça azalır — ayrıca medya sorgusu gerekmez. */}
           <div
             // Kartların DIŞINA (boşluğa) dokunmak hedeflemeyi bırakır: seçili
             // GESB, seçili videolar ve kopya modu temizlenir. target !==
@@ -717,23 +697,12 @@ export function GesbMatrixPage({
             style={{
               flex: 1,
               minHeight: 0,
-              overflowX: "auto",
-              // 3 satır her zaman sığdığı için dikey kaydırma yok — kaydırma
-              // tek yönlü kalsın (yana), iki eksende birden kaydırmak
-              // tablette kafa karıştırıyor.
-              overflowY: "hidden",
+              overflowY: "auto",
               padding: 12,
               display: "grid",
-              gridAutoFlow: "column",
-              // 3 satır mevcut yüksekliği EŞİT paylaşır — böylece üçü de her
-              // zaman ekrana sığar. max-content denendi ve olmadı: kart sabit
-              // yükseklikte olduğu için 3. satır aşağı taşıp görünmez oluyordu.
-              // minmax(0,1fr) satırın içeriğinden küçülebilmesini sağlar.
-              gridTemplateRows: "repeat(3, minmax(0, 1fr))",
-              gridAutoColumns: "minmax(300px, 360px)",
+              gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
               gap: 12,
               alignContent: "start",
-              justifyContent: "start",
             }}
           >
             {gesbs.map((gesb) => (

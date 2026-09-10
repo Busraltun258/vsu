@@ -5,10 +5,13 @@
  *  10.1" dokunmatik tablet üzerinden GESB'lere (büyük ekranlara) video
  *  dağıtımı yapan kiosk arayüzü. apps/vsu'nun giriş noktası budur.
  *
- *  ÜÇ SAYFA, her birinin gerçek bir adresi var:
- *    · "/"       GESB Matrisi  → GesbMatrixPage     (hedef GESB'e video yükleme)
+ *  ÜÇ SAYFA, her birinin kendi adresi var:
+ *    · "/gesb"   GESB Matrisi  → GesbMatrixPage     (hedef GESB'e video yükleme)
  *    · "/adu"    ADU Ekranım   → AduScreenPage      (operatörün kendi ekranı)
  *    · "/kayit"  Video Kayıt   → VideoRecordingPage (kaynakların kaydını alma)
+ *
+ *  Kök adres ("/") bir sayfa DEĞİL, yönlendirmedir: cihazın rolüne göre
+ *  tablette GESB'e, operatör bilgisayarında ADU'ya çözülür.
  *
  *  SEKME ÇUBUĞU YOK. Üçü de ayrı birer pencere: üst başlıktaki bağlantılar
  *  diğer sayfaları YENİ SEKMEDE açar, sayfa içi geçiş yapılmaz. Video kayıt
@@ -39,7 +42,7 @@ import {
   defaultTransports,
   VCU_DARK_THEME,
   VCU_LIGHT_THEME,
-  VcuLiveDotStyles,
+  VcuGlobalStyles,
   formatDuration,
   initialGesbs,
   initialRecordSources,
@@ -104,7 +107,7 @@ export function VideoControlUnitPage() {
   return (
     <ConfigProvider theme={mode === "dark" ? VCU_DARK_THEME : VCU_LIGHT_THEME}>
       <AntApp>
-        <VcuLiveDotStyles />
+        <VcuGlobalStyles />
         <VideoControlUnitShell mode={mode} onModeChange={setMode} />
       </AntApp>
     </ConfigProvider>

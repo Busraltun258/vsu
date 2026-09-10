@@ -5,16 +5,19 @@
  *  Kayıt alınabilen TÜM kaynaklar listelenir: opcon konsolları, kameralar,
  *  sensörler, radarlar. Her satır/kart kendi kaydını yönetir.
  *
- *  İKİ GÖRÜNÜM (sağ üstteki anahtar):
- *   · KART (varsayılan) — sayfalı yatay şerit. Kayıt ekranı normal
- *     bilgisayarda açıldığı için genişlik sorun değil, kartlar daha okunur.
- *   · LİSTE — tek satır = tek kaynak, düz dikey kaydırma. 30+ kaynakta
- *     "hangi kaynak nerede, kayıtta mı" taraması için çok daha hızlı.
+ *  İKİ GÖRÜNÜM (sağ üstteki anahtar), ikisi de AŞAĞI kaydırılır — sığmayan
+ *  kart/satır bir alt sıraya geçer:
+ *   · KART (varsayılan) — etiket ve süre kutuları doğrudan kartta.
+ *   · LİSTE — tek satır = tek kaynak. 30+ kaynakta "hangi kaynak nerede,
+ *     kayıtta mı" taraması için çok daha hızlı.
  *
- *  BAŞLATMA AKIŞI: her iki görünümde de "Başlat" bir MODAL açar; etiketler ve
- *  süre orada girilir. Eskiden bunlar her kartın içinde duruyordu — kartları
- *  gereksiz büyütüyor ve "etiket girmeden Başlat pasif" kuralını görünmez
- *  kılıyordu. Modal bunu açık bir adıma çevirdi.
+ *  Yatay şerit kaldırıldı: tek gerekçesi tabletin parmakla yana kaydırmasıydı,
+ *  bu ekran ise normal bilgisayarda açılıyor (fare tekerleği dikey çalışır).
+ *
+ *  BAŞLATMA AKIŞI görünüme göre değişir:
+ *   · Kartta kutular zaten kartın içinde → "Başlat" kaydı DOĞRUDAN başlatır.
+ *   · Listede satıra bu kutular sığmaz → "Başlat" küçük bir MODAL açar,
+ *     etiket ve süre orada girilir.
  *
  *  ETİKET KURALI: en az 1, en fazla MAX_RECORD_TAGS etiket. Kayıt dururken
  *  oluşan video bu etiketlerle kütüphaneye düşer; "Kayıtlı" sekmesinde
@@ -49,7 +52,7 @@ import {
   theme as antdTheme,
 } from "antd"
 import dayjs from "dayjs"
-import { useEffect, useMemo, useRef, useState, type UIEvent } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 import {
   MAX_RECORD_TAGS,
@@ -205,12 +208,19 @@ function RecordActionButton({
   recording,
   online,
   size,
+  blockedReason,
   onStart,
   onStop,
 }: {
   recording: VcuRecording | null
   online: boolean
   size?: "small"
+  /**
+   * Kaynak bağlı olsa bile başlatmayı engelleyen sebep (ör. etiket girilmemiş).
+   * Kart görünümünde kullanılır — orada kayıt doğrudan karttan başlatıldığı
+   * için doğrulama burada yapılır. Listede doğrulama modal'da.
+   */
+  blockedReason?: string
   onStart: () => void
   onStop: () => void
 }) {
@@ -224,18 +234,21 @@ function RecordActionButton({
     )
   }
 
+  const disabled = !online || Boolean(blockedReason)
+  const reason = !online ? "Kaynak bağlı değil" : (blockedReason ?? "")
+
   return (
-    <Tooltip title={online ? "" : "Kaynak bağlı değil"}>
+    <Tooltip title={reason}>
       {/* disabled butonda Tooltip tetiklenmediği için sarmalayıcı span */}
       <span>
         <Button
           size={size}
-          disabled={!online}
+          disabled={disabled}
           icon={<span style={{ fontSize: 11 }}>●</span>}
           style={
-            online
-              ? { background: token.colorError, borderColor: token.colorError, color: "#fff" }
-              : undefined
+            disabled
+              ? undefined
+              : { background: token.colorError, borderColor: token.colorError, color: "#fff" }
           }
           onClick={onStart}
         >
@@ -327,23 +340,56 @@ function VcuRecordRow({ source, recording, now, onStart, onStop }: VcuRecordRowP
 type VcuRecordCardProps = {
   source: VcuRecordSource
   recording: VcuRecording | null
+  /** Kayıt başlamadan önce girilen etiketler (kart yerel taslağı). */
+  draftTags: string[]
+  /** Kayıt başlamadan önce seçilen süre, saniye. 0 → süresiz. */
+  draftSeconds: number
+  /** Etiket kutusunun seçenekleri — operatörün bu oturumda yazdıkları. */
+  tagOptions: string[]
   now: number
+  onDraftTagsChange: (tags: string[]) => void
+  onDraftSecondsChange: (seconds: number) => void
   onStart: () => void
   onStop: () => void
 }
 
-function VcuRecordCard({ source, recording, now, onStart, onStop }: VcuRecordCardProps) {
+function VcuRecordCard({
+  source,
+  recording,
+  draftTags,
+  draftSeconds,
+  tagOptions,
+  now,
+  onDraftTagsChange,
+  onDraftSecondsChange,
+  onStart,
+  onStop,
+}: VcuRecordCardProps) {
   const { token } = useToken()
   const meta = RECORD_SOURCE_META[source.type]
   const isOffline = !source.online
 
+  const draftHours = Math.floor(draftSeconds / 3600)
+  const draftMinutes = Math.floor((draftSeconds % 3600) / 60)
+
   return (
     <Card
       size="small"
+      // Kart, ızgara satırının yüksekliğine oturur; gövdesi de flex olur ki
+      // içerik yayılsın ve eylem çubuğu hep altta kalsın. antd'nin
+      // .ant-card-body'si varsayılan olarak flex DEĞİL — styles.body ile
+      // açıkça çeviriyoruz (GESB kartındaki ile aynı yaklaşım).
       style={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
         opacity: isOffline ? 0.6 : 1,
         borderColor: recording ? token.colorError : undefined,
         background: recording ? token.colorErrorBg : undefined,
+      }}
+      styles={{
+        body: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },
       }}
       title={
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
@@ -359,22 +405,90 @@ function VcuRecordCard({ source, recording, now, onStart, onStop }: VcuRecordCar
         </Tag>
       }
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 8 }}>
         {recording ? (
           <>
             <RecordCounter recording={recording} now={now} />
             <RecordTags tags={recording.tags} />
           </>
-        ) : (
+        ) : isOffline ? (
           <Text type="secondary" style={{ fontSize: 11 }}>
-            {isOffline
-              ? "Kaynak bağlı değil — kayıt alınamaz."
-              : `${source.location} · Başlat'a dokunun, etiket ve süreyi girin.`}
+            Kaynak bağlı değil — kayıt alınamaz.
           </Text>
+        ) : (
+          /* ── HAZIR: etiket ve süre DOĞRUDAN kartta. Kart görünümünde modal
+                yok; her kart kendi kaydını baştan sona yönetir. Modal
+                yalnızca liste görünümünde, çünkü orada satıra bu kutular
+                sığmaz. ── */
+          <>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>
+                Etiketler
+              </Text>
+              <Text type="secondary" style={{ fontSize: 10 }}>
+                {draftTags.length}/{MAX_RECORD_TAGS}
+              </Text>
+            </div>
+
+            <Select
+              mode="tags"
+              size="small"
+              value={draftTags}
+              // maxCount antd tarafında da sınırlıyor; slice, sürüm farkına
+              // karşı ikinci bir emniyet (yapıştırarak toplu giriş kırpılsın).
+              maxCount={MAX_RECORD_TAGS}
+              onChange={(value: string[]) => onDraftTagsChange(value.slice(0, MAX_RECORD_TAGS))}
+              placeholder={
+                tagOptions.length === 0
+                  ? `Etiket yazın (en fazla ${MAX_RECORD_TAGS})`
+                  : `Etiket seçin veya yazın (en fazla ${MAX_RECORD_TAGS})`
+              }
+              suffixIcon={<TagsOutlined />}
+              style={{ width: "100%" }}
+              maxTagCount="responsive"
+              // Hazır öneri YOK: liste boş başlar, yazdıkça dolar.
+              options={tagOptions.map((tag) => ({ label: tag, value: tag }))}
+              notFoundContent={null}
+            />
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>
+                Kayıt süresi
+              </Text>
+              <Text type="secondary" style={{ fontSize: 10 }}>
+                {draftSeconds > 0
+                  ? `${formatDuration(draftSeconds)} sonra otomatik durur`
+                  : "Süresiz"}
+              </Text>
+            </div>
+
+            {/* İkisi de 0 ise süre sınırı yoktur; kayıt yalnızca operatör
+                durdurunca biter. Süre verilse bile "Durdur" her zaman açık. */}
+            <div style={{ display: "flex", gap: 6 }}>
+              <Select
+                size="small"
+                value={draftHours}
+                onChange={(hours: number) => onDraftSecondsChange(hours * 3600 + draftMinutes * 60)}
+                options={HOUR_OPTIONS}
+                style={{ flex: 1 }}
+              />
+              <Select
+                size="small"
+                value={draftMinutes}
+                onChange={(minutes: number) => onDraftSecondsChange(draftHours * 3600 + minutes * 60)}
+                options={MINUTE_OPTIONS}
+                style={{ flex: 1 }}
+              />
+            </div>
+          </>
         )}
 
+        {/* marginTop:auto — içerik ne kadar kısa olursa olsun eylem çubuğu
+            kartın altına yapışır, kartlar arasında hizalı görünür. */}
         <div
           style={{
+            marginTop: "auto",
+            flexShrink: 0,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
@@ -386,6 +500,11 @@ function VcuRecordCard({ source, recording, now, onStart, onStop }: VcuRecordCar
           <RecordActionButton
             recording={recording}
             online={source.online}
+            blockedReason={
+              !recording && draftTags.length === 0
+                ? "Kayıt başlatmadan önce en az bir etiket ekleyin"
+                : undefined
+            }
             onStart={onStart}
             onStop={onStop}
           />
@@ -396,24 +515,6 @@ function VcuRecordCard({ source, recording, now, onStart, onStop }: VcuRecordCar
       </div>
     </Card>
   )
-}
-
-/* ════════════════════════════════════════════════════════════════════
- *  YATAY SAYFALI ŞERİT — Instagram hikâye mantığı: kaynaklar sabit boyutlu
- *  "sayfalara" bölünür, tablet parmakla yana kaydırır (native touch scroll +
- *  CSS scroll-snap — JS'te kaydırma taklit edilmiyor), altta nokta göstergesi
- *  hangi sayfada olunduğunu gösterir ve dokununca o sayfaya kayar.
- *
- *  Yalnızca KART görünümünde kullanılır; listede düz dikey kaydırma var.
- * ════════════════════════════════════════════════════════════════════ */
-
-/** Kart görünümünde bir sayfada gösterilen kart sayısı. */
-const RECORD_PAGE_SIZE = 8
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const pages: T[][] = []
-  for (let i = 0; i < items.length; i += size) pages.push(items.slice(i, i + size))
-  return pages
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -465,7 +566,15 @@ export function VideoRecordingPage({
   /** Sayaçları saniyede bir ilerleten zaman damgası. */
   const [now, setNow] = useState(() => Date.now())
 
-  /** Başlatma modal'ının hedefi — null ise modal kapalı. */
+  /**
+   * Kaynak başına etiket/süre taslağı — KART görünümü için. Kartta kutular
+   * doğrudan duruyor, modal yok; taslak burada yaşar ki kart yeniden
+   * render olunca kaybolmasın.
+   */
+  const [draftTags, setDraftTags] = useState<Record<string, string[]>>({})
+  const [draftSeconds, setDraftSeconds] = useState<Record<string, number>>({})
+
+  /** Başlatma modal'ının hedefi — null ise modal kapalı. YALNIZCA liste görünümü. */
   const [startTarget, setStartTarget] = useState<VcuRecordSource | null>(null)
   const [formTags, setFormTags] = useState<string[]>([])
   /** Modal'daki süre, saniye. 0 → süresiz. */
@@ -522,52 +631,45 @@ export function VideoRecordingPage({
     return counts
   }, [sources])
 
-  const pages = useMemo(() => chunk(filteredSources, RECORD_PAGE_SIZE), [filteredSources])
-
-  const carouselRef = useRef<HTMLDivElement>(null)
-  const [currentPage, setCurrentPage] = useState(0)
-
-  // Filtre ya da görünüm değişince sayfa sayısı da değişir — en başa dön,
-  // yoksa "3. sayfadaydım" durumu artık var olmayan bir sayfayı gösterebilir.
-  useEffect(() => {
-    setCurrentPage(0)
-    carouselRef.current?.scrollTo({ left: 0 })
-  }, [search, typeFilter, view])
-
-  function handleCarouselScroll(event: UIEvent<HTMLDivElement>) {
-    const el = event.currentTarget
-    const width = el.clientWidth || 1
-    const index = Math.round(el.scrollLeft / width)
-    setCurrentPage((prev) => (prev === index ? prev : index))
-  }
-
-  function scrollToPage(index: number) {
-    const el = carouselRef.current
-    if (!el) return
-    el.scrollTo({ left: index * el.clientWidth, behavior: "smooth" })
-  }
-
-  /** "Başlat" — kayıt hemen başlamaz, önce etiket + süre modal'ı açılır. */
-  function openStartModal(source: VcuRecordSource) {
-    setStartTarget(source)
-    setFormTags([])
-    setFormSeconds(0)
-  }
-
-  /** Modal onayı: etiketleri öneri havuzuna kat ve kaydı başlat. */
-  function confirmStart() {
-    if (!startTarget || formTags.length === 0) return
-
+  /**
+   * Yazılan etiketleri öneri havuzuna katar. Havuz boş başlar (hazır öneri
+   * yok) — operatör ne yazarsa o birikir ve sonraki kayıtlarda listeden
+   * seçilebilir.
+   */
+  function rememberTags(tags: string[]) {
     setKnownTags((prev: string[]) => {
       const merged = new Set<string>(prev)
-      for (const tag of formTags) {
+      for (const tag of tags) {
         const trimmed = tag.trim()
         if (trimmed) merged.add(trimmed)
       }
       if (merged.size === prev.length) return prev
       return Array.from(merged).sort((a, b) => a.localeCompare(b, "tr-TR"))
     })
+  }
 
+  /** KART görünümü: kutular kartta olduğu için kayıt doğrudan başlar. */
+  function startFromCard(sourceId: string) {
+    const tags = draftTags[sourceId] ?? []
+    if (tags.length === 0) return
+    rememberTags(tags)
+    onStartRecording(sourceId, tags, draftSeconds[sourceId] ?? 0)
+    // Taslağı temizle: kayıt durunca kart yeni bir kayıt için boş açılsın.
+    setDraftTags((prev) => ({ ...prev, [sourceId]: [] }))
+    setDraftSeconds((prev) => ({ ...prev, [sourceId]: 0 }))
+  }
+
+  /** LİSTE görünümü: satıra kutular sığmadığı için önce modal açılır. */
+  function openStartModal(source: VcuRecordSource) {
+    setStartTarget(source)
+    setFormTags([])
+    setFormSeconds(0)
+  }
+
+  /** Modal onayı: etiketleri havuza kat ve kaydı başlat. */
+  function confirmStart() {
+    if (!startTarget || formTags.length === 0) return
+    rememberTags(formTags)
     onStartRecording(startTarget.id, formTags, formSeconds)
     setStartTarget(null)
   }
@@ -694,56 +796,44 @@ export function VideoRecordingPage({
           ))}
         </div>
       ) : (
-        /* ── KART: yatay sayfalı şerit ── */
-        <>
-          {/* Yatay kaydırma scrollbar'ı gizler — Instagram hikâye şeridi hissi
-              için; tabletin dokunmatik kaydırması bu stilden bağımsız çalışır. */}
-          <style>{`
-            .vcu-record-carousel::-webkit-scrollbar { display: none; }
-          `}</style>
-          <div
-            ref={carouselRef}
-            onScroll={handleCarouselScroll}
-            className="vcu-record-carousel"
-            style={{
-              flex: 1,
-              minHeight: 0,
-              display: "flex",
-              overflowX: "auto",
-              overflowY: "hidden",
-              scrollSnapType: "x mandatory",
-              scrollbarWidth: "none",
-            }}
-          >
-            {pages.map((pageSources, pageIndex) => (
-              <div
-                key={pageIndex}
-                style={{
-                  flex: "0 0 100%",
-                  minWidth: "100%",
-                  scrollSnapAlign: "start",
-                  overflowY: "auto",
-                  padding: 12,
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-                  gap: 10,
-                  alignContent: "start",
-                }}
-              >
-                {pageSources.map((source) => (
-                  <VcuRecordCard
-                    key={source.id}
-                    source={source}
-                    recording={recordingBySourceId.get(source.id) ?? null}
-                    now={now}
-                    onStart={() => openStartModal(source)}
-                    onStop={() => onStopRecording(source.id)}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        </>
+        /* ── KART: sığmayan kart ALT SATIRA geçer, aşağı kaydırılır.
+             Yatay şerit kaldırıldı: tek gerekçesi dokunmatikte parmakla yana
+             kaydırmaktı, bu ekran ise normal bilgisayarda açılıyor — fare
+             tekerleği dikey çalışır. auto-fill sütun sayısını genişliğe göre
+             kendiliğinden ayarlar. ── */
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            padding: 12,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+            gap: 12,
+            alignContent: "start",
+          }}
+        >
+          {filteredSources.map((source) => (
+            <VcuRecordCard
+              key={source.id}
+              source={source}
+              recording={recordingBySourceId.get(source.id) ?? null}
+              draftTags={draftTags[source.id] ?? []}
+              draftSeconds={draftSeconds[source.id] ?? 0}
+              tagOptions={knownTags}
+              now={now}
+              onDraftTagsChange={(tags) => {
+                setDraftTags((prev) => ({ ...prev, [source.id]: tags }))
+                rememberTags(tags)
+              }}
+              onDraftSecondsChange={(seconds) =>
+                setDraftSeconds((prev) => ({ ...prev, [source.id]: seconds }))
+              }
+              onStart={() => startFromCard(source.id)}
+              onStop={() => onStopRecording(source.id)}
+            />
+          ))}
+        </div>
       )}
 
       {/* Alt çubuk — sayfa noktaları (yalnızca kart görünümünde) ortada,
@@ -762,34 +852,13 @@ export function VideoRecordingPage({
           background: token.colorBgContainer,
         }}
       >
-        <div style={{ flex: 1 }} />
+        <Text type="secondary" style={{ fontSize: 10, flex: 1 }}>
+          {view === "card"
+            ? "Etiket ve süreyi girip Başlat'a basın"
+            : "Kaynak listesi — Başlat etiket/süre penceresini açar"}
+        </Text>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {view === "card" &&
-            pages.length > 1 &&
-            pages.map((_, index) => (
-              <button
-                key={index}
-                type="button"
-                aria-label={`Sayfa ${index + 1}`}
-                onClick={() => scrollToPage(index)}
-                style={{
-                  width: index === currentPage ? 18 : 6,
-                  height: 6,
-                  borderRadius: 3,
-                  border: "none",
-                  padding: 0,
-                  cursor: "pointer",
-                  background: index === currentPage ? token.colorPrimary : token.colorBorderSecondary,
-                  transition: "width 150ms ease",
-                }}
-              />
-            ))}
-        </div>
-
-        <div style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
-          <VcuThemeSelect mode={mode} onModeChange={onModeChange} />
-        </div>
+        <VcuThemeSelect mode={mode} onModeChange={onModeChange} />
       </footer>
 
       {/* ── BAŞLATMA MODAL'I — etiket + süre burada girilir ── */}

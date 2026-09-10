@@ -205,16 +205,18 @@ export type VcuPageKey = "gesb" | "adu" | "record"
 export type VcuRole = "control-unit" | "operator"
 
 /**
- * Sayfa ↔ adres eşlemesi. Her sayfanın GERÇEK bir adresi var: müşteri isteği
- * gereği video kayıt ekranı ayrı bir tarayıcı sekmesinde açılıyor, bu da
- * ancak doğrudan açılabilen bir adresle mümkün.
+ * Sayfa ↔ adres eşlemesi. ÜÇÜNÜN DE kendi adresi var; hiçbiri kökte durmaz.
+ * Kök ("/") ayrı bir anlam taşıyor: "bu cihazın rolüne göre karar ver".
+ * GESB bir ara kökte duruyordu ve bu onu ulaşılamaz yapmıştı — operatör
+ * bilgisayarında kök ADU'ya çözülüyor, dolayısıyla GESB bağlantısı da ADU'yu
+ * açıyordu. Sayfaların adresi rol mantığından ayrı kalmalı.
  *
  * React Router BİLEREK eklenmedi — üç adres için history API yeterli, yeni
  * bağımlılık taşımıyoruz. nginx zaten `try_files ... /index.html` yaptığı
  * için derin adres yenilendiğinde kırılmaz (bkz. apps/vsu/nginx.conf).
  */
 const PAGE_PATH_SEGMENTS: Record<VcuPageKey, string> = {
-  gesb: "",
+  gesb: "gesb",
   adu: "adu",
   record: "kayit",
 }
@@ -235,6 +237,7 @@ export function vcuPageFromLocation(): VcuPageKey | null {
     /^\/+|\/+$/g,
     "",
   )
+  if (relative === PAGE_PATH_SEGMENTS.gesb) return "gesb"
   if (relative === PAGE_PATH_SEGMENTS.adu) return "adu"
   if (relative === PAGE_PATH_SEGMENTS.record) return "record"
   return null
@@ -618,7 +621,15 @@ export function readStoredTheme(): VcuThemeMode {
   }
 }
 
-export function VcuLiveDotStyles() {
+/**
+ * Uygulama geneli CSS. Bir kez, kabukta basılır.
+ *
+ * Kart ızgaraları burada DEĞİL: hem GESB matrisi hem video kayıt basit bir
+ * `repeat(auto-fill, minmax(300px, 1fr))` ızgarası kullanıyor — sığmayan kart
+ * alt satıra geçiyor, aşağı kaydırılıyor. auto-fill sütun sayısını genişliğe
+ * göre kendiliğinden ayarladığı için medya sorgusu gerekmiyor.
+ */
+export function VcuGlobalStyles() {
   return (
     <style>{`
       @keyframes vcu-gentle-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
