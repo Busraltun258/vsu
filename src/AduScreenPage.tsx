@@ -17,25 +17,25 @@ import { App as AntApp, Button, Tag, Tooltip, Typography, theme as antdTheme } f
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
 
 import {
-    MAX_SELECTABLE_VIDEOS,
-    VcuHeader,
-    VcuKindTag,
-    VcuSelectionFooter,
-    VcuSlotsPreview,
-    VcuTransportBar,
-    VcuVideoLibrary,
-    defaultTransports,
-    parseDuration,
-    slotVideo,
-    slotsKind,
-    type VcuLayout,
-    type VcuOwnScreen,
-    type VcuPageKey,
-    type VcuRole,
-    type VcuThemeMode,
-    type VcuTransport,
-    type VcuVideoKind,
-    type VcuVideoSource,
+  MAX_SELECTABLE_VIDEOS,
+  VcuHeader,
+  VcuKindTag,
+  VcuSelectionFooter,
+  VcuSlotsPreview,
+  VcuTransportBar,
+  VcuVideoLibrary,
+  defaultTransports,
+  parseDuration,
+  slotVideo,
+  slotsKind,
+  type VcuLayout,
+  type VcuOwnScreen,
+  type VcuPageKey,
+  type VcuRole,
+  type VcuThemeMode,
+  type VcuTransport,
+  type VcuVideoKind,
+  type VcuVideoSource,
 } from "./vcuShared"
 
 const { useToken } = antdTheme
@@ -430,8 +430,6 @@ export function AduScreenPage({
       <VcuHeader
         page={page}
         onPageChange={onPageChange}
-        mode={mode}
-        onModeChange={onModeChange}
         subtitle="(ADU — Kendi Ekranın)"
         role={role}
         recordingCount={recordingCount}
@@ -494,6 +492,8 @@ export function AduScreenPage({
               : "Bu ekran: Boş"
         }
         onRemoveSelected={toggleVideo}
+        mode={mode}
+        onModeChange={onModeChange}
       />
     </div>
   )

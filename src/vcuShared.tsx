@@ -177,6 +177,13 @@ export type VcuRecording = {
   /** epoch ms — geçen süre bundan hesaplanır. */
   startedAt: number
   tags: string[]
+  /**
+   * Kayıt başlarken seçilen süre (saniye). 0 / verilmemiş → SÜRESİZ: kayıt
+   * yalnızca operatör durdurunca biter. Doluysa süre dolunca kayıt
+   * KENDİLİĞİNDEN durur (bkz. VideoRecordingPage'deki otomatik durdurma
+   * efekti); operatör isterse daha erken de durdurabilir.
+   */
+  plannedSeconds?: number
 }
 
 /** Uygulamanın sayfaları. Her biri ayrı bir ekran, ortak kabuğu paylaşır. */
@@ -431,16 +438,9 @@ export const initialRecordSources: VcuRecordSource[] = [
   { id: "s30", name: "Opcon 6 · Gözlem Konsolu", type: "opcon", location: "Gözlem Kulesi", online: true },
 ]
 
-/** Kayıt başlatırken önerilen etiketler — operatör kendi etiketini de yazabilir. */
-export const RECORD_TAG_SUGGESTIONS = [
-  "Tatbikat",
-  "Operasyon",
-  "Eğitim",
-  "Test",
-  "Olay",
-  "Brifing",
-  "Gece Görüşü",
-]
+// Hazır etiket önerisi listesi BİLEREK YOK. Kullanıcı geri bildirimi: baştan
+// dolu bir öneri listesi istenmiyor. Etiket kutusu boş açılır ve operatörün
+// bu oturumda yazdığı etiketlerle dolar (bkz. VideoRecordingPage/knownTags).
 
 /** Bir kayda eklenebilecek en fazla etiket sayısı. */
 export const MAX_RECORD_TAGS = 4
@@ -630,11 +630,51 @@ export function VcuLiveDotStyles() {
  *  ORTAK ÜST BAŞLIK — üç sayfa da bunu kullanır (sekmeler + tema + eylemler)
  * ════════════════════════════════════════════════════════════════════ */
 
+/**
+ * Tema seçici — alt çubukta durur, listesi YUKARI açılır (ekran dışına
+ * taşmasın). Eskiden üst başlıkta bir düğmeydi; sekmelerin yanında konuyla
+ * alakasız durduğu için buraya indirildi (bkz. VcuSelectionFooter).
+ */
+export function VcuThemeSelect({
+  mode,
+  onModeChange,
+}: {
+  mode: VcuThemeMode
+  onModeChange: (mode: VcuThemeMode) => void
+}) {
+  return (
+    <Select
+      size="small"
+      value={mode}
+      onChange={(value) => onModeChange(value as VcuThemeMode)}
+      placement="topRight"
+      popupMatchSelectWidth={false}
+      style={{ width: 108, flexShrink: 0 }}
+      options={[
+        {
+          value: "dark" satisfies VcuThemeMode,
+          label: (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+              <MoonOutlined /> Koyu Mod
+            </span>
+          ),
+        },
+        {
+          value: "light" satisfies VcuThemeMode,
+          label: (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+              <SunOutlined /> Açık Mod
+            </span>
+          ),
+        },
+      ]}
+    />
+  )
+}
+
 type VcuHeaderProps = {
   page: VcuPageKey
   onPageChange: (page: VcuPageKey) => void
-  mode: VcuThemeMode
-  onModeChange: (mode: VcuThemeMode) => void
   /** Başlığın yanındaki gri açıklama — sayfaya göre değişir. */
   subtitle: string
   /** Sayfaya özgü eylemler (ör. "Tümünü Durdur"). */
@@ -651,8 +691,6 @@ type VcuHeaderProps = {
 export function VcuHeader({
   page,
   onPageChange,
-  mode,
-  onModeChange,
   subtitle,
   extra,
   recordingCount = 0,
@@ -713,12 +751,7 @@ export function VcuHeader({
           />
         )}
 
-        <Button
-          icon={mode === "dark" ? <SunOutlined /> : <MoonOutlined />}
-          onClick={() => onModeChange(mode === "dark" ? "light" : "dark")}
-        >
-          {mode === "dark" ? "Açık Mod" : "Koyu Mod"}
-        </Button>
+        {/* Tema düğmesi buradan alt çubuğa taşındı — bkz. VcuThemeSelect. */}
 
         {/* Kayıt ekranına yönlendirme: aynı uygulama, ayrı adres, YENİ SEKME.
             Tablette (control-unit) hiç görünmez — kayıt normal bilgisayardan
@@ -1585,6 +1618,8 @@ type VcuSelectionFooterProps = {
   /** Sağdaki durum metni — sayfaya göre değişir. */
   statusText: string
   onRemoveSelected: (id: string) => void
+  mode: VcuThemeMode
+  onModeChange: (mode: VcuThemeMode) => void
 }
 
 export function VcuSelectionFooter({
@@ -1594,6 +1629,8 @@ export function VcuSelectionFooter({
   layout,
   statusText,
   onRemoveSelected,
+  mode,
+  onModeChange,
 }: VcuSelectionFooterProps) {
   const { token } = useToken()
 
@@ -1655,6 +1692,10 @@ export function VcuSelectionFooter({
       <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
         {statusText}
       </Text>
+
+      <div style={{ width: 1, height: 20, background: token.colorBorderSecondary }} />
+
+      <VcuThemeSelect mode={mode} onModeChange={onModeChange} />
     </footer>
   )
 }

@@ -14,45 +14,45 @@
  * ════════════════════════════════════════════════════════════════════ */
 
 import {
-    CopyOutlined,
-    PauseOutlined,
-    PlayCircleFilled,
-    PoweroffOutlined,
-    SettingOutlined,
-    WifiOutlined,
+  CopyOutlined,
+  PauseOutlined,
+  PlayCircleFilled,
+  PoweroffOutlined,
+  SettingOutlined,
+  WifiOutlined,
 } from "@ant-design/icons"
 import {
-    App as AntApp,
-    Badge,
-    Button,
-    Card,
-    Tag,
-    Tooltip,
-    Typography,
-    theme as antdTheme,
+  App as AntApp,
+  Badge,
+  Button,
+  Card,
+  Tag,
+  Tooltip,
+  Typography,
+  theme as antdTheme,
 } from "antd"
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
 
 import {
-    MAX_SELECTABLE_VIDEOS,
-    VcuHeader,
-    VcuKindTag,
-    VcuSelectionFooter,
-    VcuSlotsPreview,
-    VcuTransportBar,
-    VcuVideoLibrary,
-    defaultTransports,
-    parseDuration,
-    slotVideo,
-    slotsKind,
-    type VcuGesb,
-    type VcuLayout,
-    type VcuPageKey,
-    type VcuRole,
-    type VcuThemeMode,
-    type VcuTransport,
-    type VcuVideoKind,
-    type VcuVideoSource,
+  MAX_SELECTABLE_VIDEOS,
+  VcuHeader,
+  VcuKindTag,
+  VcuSelectionFooter,
+  VcuSlotsPreview,
+  VcuTransportBar,
+  VcuVideoLibrary,
+  defaultTransports,
+  parseDuration,
+  slotVideo,
+  slotsKind,
+  type VcuGesb,
+  type VcuLayout,
+  type VcuPageKey,
+  type VcuRole,
+  type VcuThemeMode,
+  type VcuTransport,
+  type VcuVideoKind,
+  type VcuVideoSource,
 } from "./vcuShared"
 
 const { useToken } = antdTheme
@@ -476,6 +476,17 @@ export function GesbMatrixPage({
    *    sızmaz, her GESB kendi gerçek durumundan okunur. Zaten hedef olan
    *    karta TEKRAR dokunmak hiçbir şey yapmaz.
    */
+  /**
+   * Hedeflemeyi tamamen bırakır — seçili GESB, video seçimi ve kopya modu
+   * sıfırlanır. Kart ızgarasının boşluğuna dokununca çağrılır; operatörün
+   * "hiçbir şey seçili değil" durumuna dönmesinin tek yolu buydu.
+   */
+  function clearTargeting() {
+    setSelectedGesbId(null)
+    setSelectedVideoIds([])
+    setCopySourceId(null)
+  }
+
   function handleGesbTap(id: string) {
     if (copySourceId) {
       if (copySourceId !== id) pasteGesbContent(copySourceId, id)
@@ -605,8 +616,6 @@ export function GesbMatrixPage({
       <VcuHeader
         page={page}
         onPageChange={onPageChange}
-        mode={mode}
-        onModeChange={onModeChange}
         subtitle={`(${gesbs.length} Ekran Matrisi)`}
         role={role}
         recordingCount={recordingCount}
@@ -669,15 +678,33 @@ export function GesbMatrixPage({
             )}
           </div>
 
+          {/* Kartlar ALT ALTA 3, dolunca yeni sütuna geçer ve YANA kaydırılır.
+              Satır yüksekliği max-content: bir kartta oynatma paneli açılınca
+              (bkz. transportOpen) kart uzar, kırpılmaz — 3'ü birden sığmazsa
+              dikey kaydırma da devreye girer. Sütun genişliği sabit tutuluyor,
+              yoksa yatay kaydırmada 1fr anlamsızlaşır. */}
           <div
+            // Kartların DIŞINA (boşluğa) dokunmak hedeflemeyi bırakır: seçili
+            // GESB, seçili videolar ve kopya modu temizlenir. target !==
+            // currentTarget kontrolü, karta yapılan tıklamanın buraya kadar
+            // kabarıp seçimi hemen bozmasını engelliyor.
+            onClick={(event) => {
+              if (event.target !== event.currentTarget) return
+              clearTargeting()
+            }}
             style={{
               flex: 1,
+              minHeight: 0,
+              overflowX: "auto",
               overflowY: "auto",
               padding: 12,
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+              gridAutoFlow: "column",
+              gridTemplateRows: "repeat(3, max-content)",
+              gridAutoColumns: "minmax(300px, 360px)",
               gap: 12,
               alignContent: "start",
+              justifyContent: "start",
             }}
           >
             {gesbs.map((gesb) => (
@@ -714,6 +741,8 @@ export function GesbMatrixPage({
             : "Hedef GESB seçilmedi"
         }
         onRemoveSelected={toggleVideo}
+        mode={mode}
+        onModeChange={onModeChange}
       />
     </div>
   )

@@ -34,10 +34,10 @@ import { GesbMatrixPage } from "./GesbMatrixPage"
 import { VideoRecordingPage } from "./VideoRecordingPage"
 import {
   THEME_STORAGE_KEY,
+  defaultTransports,
   VCU_DARK_THEME,
   VCU_LIGHT_THEME,
   VcuLiveDotStyles,
-  defaultTransports,
   formatDuration,
   initialGesbs,
   initialRecordSources,
@@ -167,13 +167,21 @@ function VideoControlUnitShell({
 
   /* ── Kayıt işlemleri ───────────────────────────────────────────── */
 
-  function handleStartRecording(sourceId: string, tags: string[]) {
+  /** `plannedSeconds` 0 ise süresiz kayıt; doluysa süre dolunca kendiliğinden durur. */
+  function handleStartRecording(sourceId: string, tags: string[], plannedSeconds: number) {
     const source = initialRecordSources.find((s) => s.id === sourceId)
     if (!source || !source.online) return
     if (recordings.some((recording) => recording.sourceId === sourceId)) return
 
-    setRecordings((prev) => [...prev, { sourceId, startedAt: Date.now(), tags }])
-    void message.success(`${source.name} kaydı başladı.`)
+    setRecordings((prev) => [
+      ...prev,
+      { sourceId, startedAt: Date.now(), tags, plannedSeconds },
+    ])
+    void message.success(
+      plannedSeconds > 0
+        ? `${source.name} kaydı başladı — ${formatDuration(plannedSeconds)} sonra otomatik duracak.`
+        : `${source.name} kaydı başladı.`,
+    )
   }
 
   /**
