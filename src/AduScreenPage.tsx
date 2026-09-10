@@ -258,7 +258,6 @@ type AduScreenPageProps = {
   mode: VcuThemeMode
   onModeChange: (mode: VcuThemeMode) => void
   page: VcuPageKey
-  onPageChange: (page: VcuPageKey) => void
   role: VcuRole
   recordingCount: number
   videos: VcuVideoSource[]
@@ -271,7 +270,6 @@ export function AduScreenPage({
   mode,
   onModeChange,
   page,
-  onPageChange,
   role,
   recordingCount,
   videos,
@@ -429,7 +427,6 @@ export function AduScreenPage({
     >
       <VcuHeader
         page={page}
-        onPageChange={onPageChange}
         subtitle="(ADU — Kendi Ekranın)"
         role={role}
         recordingCount={recordingCount}

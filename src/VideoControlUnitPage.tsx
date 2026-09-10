@@ -10,15 +10,17 @@
  *    · "/adu"    ADU Ekranım   → AduScreenPage      (operatörün kendi ekranı)
  *    · "/kayit"  Video Kayıt   → VideoRecordingPage (kaynakların kaydını alma)
  *
- *  GESB ve ADU üst sekmelerle geçilir. VİDEO KAYIT SEKME DEĞİL: müşteri
- *  isteğiyle ayrı bir tarayıcı sekmesinde açılıyor — ADU/GESB başlığındaki
- *  "Video Kayıt" düğmesi onu yeni sekmede açar. Düğme yalnızca operatör
- *  bilgisayarında görünür; 10.1" tablette (kontrol ünitesi) kayıt alınmıyor.
+ *  SEKME ÇUBUĞU YOK. Üçü de ayrı birer pencere: üst başlıktaki bağlantılar
+ *  diğer sayfaları YENİ SEKMEDE açar, sayfa içi geçiş yapılmaz. Video kayıt
+ *  bağlantısı yalnızca operatör bilgisayarında görünür — 10.1" tablette
+ *  (kontrol ünitesi) kayıt alınmıyor.
  *
  *  Sayfalar arasında yaşaması gereken her şey (video kütüphanesi, GESB
- *  durumları, kendi ekran, süren kayıtlar) BURADA tutulur; sayfalar
- *  unmount olunca kaybolmasın diye. Ortak tipler/tema/bileşenler
- *  vcuShared.tsx'te.
+ *  durumları, kendi ekran, süren kayıtlar) BURADA tutulur. DİKKAT: bu
+ *  durum sekmeye özeldir — sayfalar ayrı sekmelerde açıldığı için biri
+ *  diğerinin durumunu göremez. Mockup'ta kabul edilebilir; gerçek
+ *  entegrasyonda ortak durum backend'den gelecek. Ortak tipler/tema/
+ *  bileşenler vcuShared.tsx'te.
  *
  *  Backend'e bağlı değil — gerçek bir video matrix/kayıt entegrasyonu
  *  geldiğinde vcuShared'deki "SAHTE VERİ" bölümünün yerini bir API
@@ -122,14 +124,11 @@ function VideoControlUnitShell({
   const [role] = useState<VcuRole>(readRole)
   const [page, setPage] = useState<VcuPageKey>(() => readInitialPage(role))
 
-  /** Sayfa değiştirme: durum ve adres birlikte ilerler, geri tuşu çalışır. */
-  function navigate(next: VcuPageKey) {
-    setPage(next)
-    if (window.location.pathname !== vcuPageHref(next)) {
-      window.history.pushState({ page: next }, "", vcuPageHref(next))
-    }
-  }
-
+  // SAYFA İÇİ GEZİNME YOK: üç sayfa da kendi adresinde ayrı bir pencere,
+  // üst başlıktaki bağlantılar hepsini yeni sekmede açıyor (bkz. PAGE_LINKS).
+  // Bu yüzden pushState eden bir navigate() da yok — sayfa açılışta adresten
+  // bir kez okunuyor. popstate yine de dinleniyor ki adres dışarıdan
+  // değişirse (geri/ileri) doğru ekran gösterilsin.
   useEffect(() => {
     // Kök adreste açıldıysak adres çubuğunu gerçekte gösterilen sayfaya
     // eşitle — böylece adres kopyalanıp aynı ekran tekrar açılabilir.
@@ -142,8 +141,7 @@ function VideoControlUnitShell({
     }
     window.addEventListener("popstate", handlePopState)
     return () => window.removeEventListener("popstate", handlePopState)
-    // Yalnızca ilk montajda kurulur; `page` bilerek bağımlılık değil
-    // (sonraki değişiklikleri navigate zaten adrese yazıyor).
+    // Yalnızca ilk montajda kurulur; `page` bilerek bağımlılık değil.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role])
 
@@ -239,7 +237,6 @@ function VideoControlUnitShell({
         mode={mode}
         onModeChange={onModeChange}
         page={page}
-        onPageChange={navigate}
         role={role}
         sources={initialRecordSources}
         recordings={recordings}
@@ -256,7 +253,6 @@ function VideoControlUnitShell({
         mode={mode}
         onModeChange={onModeChange}
         page={page}
-        onPageChange={navigate}
         role={role}
         recordingCount={recordings.length}
         videos={videos}
@@ -272,7 +268,6 @@ function VideoControlUnitShell({
       mode={mode}
       onModeChange={onModeChange}
       page={page}
-      onPageChange={navigate}
       role={role}
       recordingCount={recordings.length}
       videos={videos}

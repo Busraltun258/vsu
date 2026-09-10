@@ -151,11 +151,28 @@ function VcuGesbCard({
       hoverable={!isOffline}
       onClick={() => !isOffline && onToggleSelect()}
       size="small"
+      // Kart, ızgara satırının yüksekliğine oturur; gövdesi de flex olur ki
+      // içindeki önizleme kalan alanı doldursun. antd'nin .ant-card-body'si
+      // varsayılan olarak flex DEĞİL — styles.body ile açıkça çeviriyoruz,
+      // yoksa fill modundaki önizleme yüksekliği hiçbir işe yaramaz
+      // (aynı sorun ADU kartında Card'ı tamamen bırakmamıza yol açmıştı).
       style={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
         opacity: isOffline ? 0.6 : 1,
         cursor: isOffline ? "not-allowed" : "pointer",
         borderColor: copySource ? token.colorWarning : selected ? token.colorPrimary : undefined,
         background: copySource ? token.colorWarningBg : selected ? token.colorPrimaryBg : undefined,
+      }}
+      styles={{
+        body: {
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+        },
       }}
       title={
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
@@ -213,6 +230,9 @@ function VcuGesbCard({
         </div>
       }
     >
+      {/* fill: önizleme kartın kalan yüksekliğini doldurur. Sabit 108px
+          kullanılsaydı 3 kart bir sütuna sığmazdı (bkz. ızgaradaki
+          minmax(0,1fr) satırlar). */}
       <VcuSlotsPreview
         slots={gesb.slots}
         videosById={videosById}
@@ -220,26 +240,31 @@ function VcuGesbCard({
         emptyHint={selected ? "Video seçin, buraya yüklenecek" : "Hedeflemek için dokunun"}
         removeDisabled={isLive}
         onRemoveSlot={onRemoveSlot}
+        fill
         activeSlotIndex={isRecordedContent ? activeSlotIndex : null}
         onSelectSlot={isRecordedContent ? setActiveSlotIndex : undefined}
       />
 
       {/* Sarma/hız yalnızca KAYITLI içerikte ve panel açıkken — canlı kaynağın
-          zaman çizgisi yok, panel varsayılan kapalı (bkz. transportOpen). */}
+          zaman çizgisi yok, panel varsayılan kapalı (bkz. transportOpen).
+          flexShrink:0 — önizleme flex:1 ile büyürken çubuk ezilmesin. */}
       {isRecordedContent && transportOpen && (
-        <VcuTransportBar
-          transport={gesb.transports[activeSlotIndex]}
-          duration={activeDuration}
-          live={isLive}
-          activeLabel={filledCount > 1 ? `#${activeSlotIndex + 1} · ${activeVideo?.name ?? ""}` : undefined}
-          onChange={(next) => onTransportChange(activeSlotIndex, next)}
-        />
+        <div style={{ flexShrink: 0 }}>
+          <VcuTransportBar
+            transport={gesb.transports[activeSlotIndex]}
+            duration={activeDuration}
+            live={isLive}
+            activeLabel={filledCount > 1 ? `#${activeSlotIndex + 1} · ${activeVideo?.name ?? ""}` : undefined}
+            onChange={(next) => onTransportChange(activeSlotIndex, next)}
+          />
+        </div>
       )}
 
       {/* Alt buton çubuğu — Yayınla/Başlat, Durdur, Temizle */}
       {!isOffline && (
         <div
           style={{
+            flexShrink: 0,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
@@ -308,7 +333,6 @@ type GesbMatrixPageProps = {
   mode: VcuThemeMode
   onModeChange: (mode: VcuThemeMode) => void
   page: VcuPageKey
-  onPageChange: (page: VcuPageKey) => void
   role: VcuRole
   recordingCount: number
   videos: VcuVideoSource[]
@@ -321,7 +345,6 @@ export function GesbMatrixPage({
   mode,
   onModeChange,
   page,
-  onPageChange,
   role,
   recordingCount,
   videos,
@@ -615,7 +638,6 @@ export function GesbMatrixPage({
     >
       <VcuHeader
         page={page}
-        onPageChange={onPageChange}
         subtitle={`(${gesbs.length} Ekran Matrisi)`}
         role={role}
         recordingCount={recordingCount}
@@ -696,11 +718,18 @@ export function GesbMatrixPage({
               flex: 1,
               minHeight: 0,
               overflowX: "auto",
-              overflowY: "auto",
+              // 3 satır her zaman sığdığı için dikey kaydırma yok — kaydırma
+              // tek yönlü kalsın (yana), iki eksende birden kaydırmak
+              // tablette kafa karıştırıyor.
+              overflowY: "hidden",
               padding: 12,
               display: "grid",
               gridAutoFlow: "column",
-              gridTemplateRows: "repeat(3, max-content)",
+              // 3 satır mevcut yüksekliği EŞİT paylaşır — böylece üçü de her
+              // zaman ekrana sığar. max-content denendi ve olmadı: kart sabit
+              // yükseklikte olduğu için 3. satır aşağı taşıp görünmez oluyordu.
+              // minmax(0,1fr) satırın içeriğinden küçülebilmesini sağlar.
+              gridTemplateRows: "repeat(3, minmax(0, 1fr))",
               gridAutoColumns: "minmax(300px, 360px)",
               gap: 12,
               alignContent: "start",

@@ -2,28 +2,45 @@
  * ════════════════════════════════════════════════════════════════════
  *  VİDEO KAYIT SAYFASI — kaynakların kaydını alma ekranı
  *
- *  Kayıt alınabilen TÜM kaynaklar tek bir kart ızgarasında listelenir:
- *  opcon konsolları, kameralar, sensörler, radarlar. Her kart kendi
- *  kaydını yönetir — kayıt başlat / kayıt durdur.
+ *  Kayıt alınabilen TÜM kaynaklar listelenir: opcon konsolları, kameralar,
+ *  sensörler, radarlar. Her satır/kart kendi kaydını yönetir.
  *
- *  ETİKET KURALI: etiketler kayıt BAŞLARKEN girilir (en az 1, en fazla
- *  MAX_RECORD_TAGS). Kayıt dururken oluşan video, bu etiketlerle birlikte
- *  kütüphaneye düşer; "Kayıtlı" sekmesinde etikete göre aranıp filtrelenir.
- *  Hazır etiket önerisi YOK: kutu boş açılır, operatörün bu oturumda yazdığı
- *  etiketler biriktirilip sonraki kartlara öneri olarak sunulur (knownTags).
+ *  İKİ GÖRÜNÜM (sağ üstteki anahtar):
+ *   · KART (varsayılan) — sayfalı yatay şerit. Kayıt ekranı normal
+ *     bilgisayarda açıldığı için genişlik sorun değil, kartlar daha okunur.
+ *   · LİSTE — tek satır = tek kaynak, düz dikey kaydırma. 30+ kaynakta
+ *     "hangi kaynak nerede, kayıtta mı" taraması için çok daha hızlı.
  *
- *  SÜRE KURALI: kayıt başlarken saat + dakika seçilebilir. Süre dolunca kayıt
- *  KENDİLİĞİNDEN durur ve kütüphaneye düşer; sayaç geri sayar. 0sa 0dk
- *  seçilirse süre sınırı yoktur, kayıt yalnızca elle durdurulur. Her iki
- *  durumda da operatör istediği an "Kayıt Durdur" diyebilir.
+ *  BAŞLATMA AKIŞI: her iki görünümde de "Başlat" bir MODAL açar; etiketler ve
+ *  süre orada girilir. Eskiden bunlar her kartın içinde duruyordu — kartları
+ *  gereksiz büyütüyor ve "etiket girmeden Başlat pasif" kuralını görünmez
+ *  kılıyordu. Modal bunu açık bir adıma çevirdi.
+ *
+ *  ETİKET KURALI: en az 1, en fazla MAX_RECORD_TAGS etiket. Kayıt dururken
+ *  oluşan video bu etiketlerle kütüphaneye düşer; "Kayıtlı" sekmesinde
+ *  etikete göre aranıp filtrelenir. Hazır öneri listesi YOK: kutu boş açılır,
+ *  operatörün bu oturumda yazdığı etiketler biriktirilip sonraki kayıtlara
+ *  öneri olarak sunulur (knownTags).
+ *
+ *  SÜRE KURALI: saat + dakika seçilebilir. Süre dolunca kayıt KENDİLİĞİNDEN
+ *  durur ve kütüphaneye düşer; sayaç geri sayar. 0sa 0dk seçilirse süre
+ *  sınırı yoktur, kayıt yalnızca elle durdurulur. Her durumda operatör
+ *  istediği an "Durdur" diyebilir.
  * ════════════════════════════════════════════════════════════════════ */
 
-import { PoweroffOutlined, SearchOutlined, TagsOutlined } from "@ant-design/icons"
+import {
+  AppstoreOutlined,
+  PoweroffOutlined,
+  SearchOutlined,
+  TagsOutlined,
+  UnorderedListOutlined,
+} from "@ant-design/icons"
 import {
   App as AntApp,
   Button,
   Card,
   Input,
+  Modal,
   Segmented,
   Select,
   Tag,
@@ -52,305 +69,330 @@ import {
 const { useToken } = antdTheme
 const { Text } = Typography
 
-/* ════════════════════════════════════════════════════════════════════
- *  KAYNAK KARTI
- * ════════════════════════════════════════════════════════════════════ */
-
 /** Süre seçicisindeki saat seçenekleri. */
 const HOUR_OPTIONS = Array.from({ length: 13 }, (_, h) => ({ label: `${h} sa`, value: h }))
 
 /** Süre seçicisindeki dakika seçenekleri — dakika hassasiyetinde tam liste. */
 const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, m) => ({ label: `${m} dk`, value: m }))
 
-type VcuRecordCardProps = {
-  source: VcuRecordSource
-  /** Bu kaynakta süren kayıt — yoksa kart "hazır" durumdadır. */
-  recording: VcuRecording | null
-  /** Kayıt başlamadan önce girilen etiketler (kart yerel taslağı). */
-  draftTags: string[]
-  /** Kayıt başlamadan önce seçilen süre, saniye. 0 → süresiz (elle durdurulur). */
-  draftSeconds: number
-  /**
-   * Etiket kutusunun seçenekleri — hazır öneri listesi YOK, bunlar operatörün
-   * bu oturumda yazdığı etiketler (bkz. sayfa düzeyindeki knownTags).
-   */
-  tagOptions: string[]
-  /** Geçen süreyi yeniden hesaplatmak için saniyede bir güncellenen zaman damgası. */
+type VcuRecordView = "list" | "card"
+
+/* ════════════════════════════════════════════════════════════════════
+ *  ORTAK PARÇALAR — liste satırı ve kart aynı bilgiyi gösterir
+ * ════════════════════════════════════════════════════════════════════ */
+
+/** Kaynağın durum noktası: kayıtta kırmızı (nabız), çevrimdışı gri, hazır yeşil. */
+function StatusDot({ recording, online }: { recording: VcuRecording | null; online: boolean }) {
+  const { token } = useToken()
+  return (
+    <span
+      className={recording ? "vcu-live-dot" : undefined}
+      style={{
+        width: 8,
+        height: 8,
+        flexShrink: 0,
+        borderRadius: 999,
+        display: "inline-block",
+        background: recording
+          ? token.colorError
+          : online
+            ? token.colorSuccess
+            : token.colorTextQuaternary,
+      }}
+    />
+  )
+}
+
+/**
+ * Süren kaydın sayacı. Süre sınırı varsa GERİ SAYAR (kalan süre), yoksa geçen
+ * süreyi ileri sayar. `compact` liste satırı için — tek satıra sığar.
+ */
+function RecordCounter({
+  recording,
+  now,
+  compact,
+}: {
+  recording: VcuRecording
   now: number
-  onDraftTagsChange: (tags: string[]) => void
-  onDraftSecondsChange: (seconds: number) => void
+  compact?: boolean
+}) {
+  const { token } = useToken()
+  const elapsed = Math.floor((now - recording.startedAt) / 1000)
+  const planned = recording.plannedSeconds ?? 0
+  const remaining = planned > 0 ? Math.max(0, planned - elapsed) : null
+
+  if (compact) {
+    return (
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexShrink: 0 }}>
+        <Text
+          style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: token.colorError }}
+        >
+          {formatDuration(remaining ?? elapsed)}
+        </Text>
+        <Text type="secondary" style={{ fontSize: 9 }}>
+          {remaining === null ? "geçen" : `kalan · ${formatDuration(planned)}`}
+        </Text>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 8,
+        padding: "8px 10px",
+        borderRadius: token.borderRadius,
+        border: `1px solid ${token.colorErrorBorder}`,
+        background: token.colorBgContainer,
+      }}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+        <Text type="secondary" style={{ fontSize: 9, letterSpacing: 0.5, textTransform: "uppercase" }}>
+          {remaining === null ? "Geçen süre" : "Kalan süre"}
+        </Text>
+        <Text
+          style={{
+            fontFamily: "monospace",
+            fontSize: 20,
+            fontWeight: 600,
+            lineHeight: 1.1,
+            color: token.colorError,
+          }}
+        >
+          {formatDuration(remaining ?? elapsed)}
+        </Text>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+        <Text type="secondary" style={{ fontSize: 10 }}>
+          {dayjs(recording.startedAt).format("HH:mm:ss")}
+        </Text>
+        <Text type="secondary" style={{ fontSize: 10 }}>
+          {remaining === null
+            ? "Süresiz"
+            : `${formatDuration(elapsed)} / ${formatDuration(planned)}`}
+        </Text>
+      </div>
+    </div>
+  )
+}
+
+/** Kaydın etiket rozetleri (kayıt sürerken değiştirilemez). */
+function RecordTags({ tags, compact }: { tags: string[]; compact?: boolean }) {
+  const { token } = useToken()
+  if (tags.length === 0) return null
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 3, minWidth: 0 }}>
+      <TagsOutlined style={{ fontSize: 10, color: token.colorTextTertiary, flexShrink: 0 }} />
+      {tags.map((tag) => (
+        <Tag
+          key={tag}
+          color="blue"
+          bordered={false}
+          style={{ marginInlineEnd: 0, fontSize: compact ? 9 : 10, lineHeight: "16px" }}
+        >
+          {tag}
+        </Tag>
+      ))}
+    </div>
+  )
+}
+
+/** Başlat / Durdur düğmesi — iki görünümde de aynı davranış. */
+function RecordActionButton({
+  recording,
+  online,
+  size,
+  onStart,
+  onStop,
+}: {
+  recording: VcuRecording | null
+  online: boolean
+  size?: "small"
+  onStart: () => void
+  onStop: () => void
+}) {
+  const { token } = useToken()
+
+  if (recording) {
+    return (
+      <Button danger type="primary" size={size} icon={<PoweroffOutlined />} onClick={onStop}>
+        Durdur
+      </Button>
+    )
+  }
+
+  return (
+    <Tooltip title={online ? "" : "Kaynak bağlı değil"}>
+      {/* disabled butonda Tooltip tetiklenmediği için sarmalayıcı span */}
+      <span>
+        <Button
+          size={size}
+          disabled={!online}
+          icon={<span style={{ fontSize: 11 }}>●</span>}
+          style={
+            online
+              ? { background: token.colorError, borderColor: token.colorError, color: "#fff" }
+              : undefined
+          }
+          onClick={onStart}
+        >
+          Başlat
+        </Button>
+      </span>
+    </Tooltip>
+  )
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ *  LİSTE SATIRI (varsayılan görünüm)
+ * ════════════════════════════════════════════════════════════════════ */
+
+type VcuRecordRowProps = {
+  source: VcuRecordSource
+  recording: VcuRecording | null
+  now: number
   onStart: () => void
   onStop: () => void
 }
 
-function VcuRecordCard({
-  source,
-  recording,
-  draftTags,
-  draftSeconds,
-  tagOptions,
-  now,
-  onDraftTagsChange,
-  onDraftSecondsChange,
-  onStart,
-  onStop,
-}: VcuRecordCardProps) {
+function VcuRecordRow({ source, recording, now, onStart, onStop }: VcuRecordRowProps) {
   const { token } = useToken()
   const meta = RECORD_SOURCE_META[source.type]
-  const isRecording = recording !== null
   const isOffline = !source.online
 
-  const elapsed = recording ? Math.floor((now - recording.startedAt) / 1000) : 0
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "8px 12px",
+        minHeight: 52,
+        borderRadius: token.borderRadius,
+        border: `1px solid ${recording ? token.colorErrorBorder : token.colorBorderSecondary}`,
+        background: recording ? token.colorErrorBg : token.colorBgContainer,
+        opacity: isOffline ? 0.6 : 1,
+      }}
+    >
+      <StatusDot recording={recording} online={source.online} />
 
-  /** Süre sınırlı kayıtta kalan saniye; süresizde null. Sayaç bunu geri sayar. */
-  const planned = recording?.plannedSeconds ?? 0
-  const remaining = planned > 0 ? Math.max(0, planned - elapsed) : null
+      <Tag icon={meta.icon} color={meta.color} style={{ marginInlineEnd: 0, flexShrink: 0 }}>
+        {meta.label}
+      </Tag>
 
-  const draftHours = Math.floor(draftSeconds / 3600)
-  const draftMinutes = Math.floor((draftSeconds % 3600) / 60)
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <Text style={{ fontSize: 12, fontWeight: 500 }} ellipsis>
+          {source.name}
+        </Text>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          <Text type="secondary" style={{ fontSize: 10, flexShrink: 0 }}>
+            {source.location}
+          </Text>
+          {recording && <RecordTags tags={recording.tags} compact />}
+        </div>
+      </div>
 
-  const statusTag = isOffline ? (
-    <Tag color="default">Bağlı değil</Tag>
-  ) : isRecording ? (
-    <Tag color="error">● Kayıtta</Tag>
-  ) : (
-    <Tag color="success">Hazır</Tag>
+      {recording && <RecordCounter recording={recording} now={now} compact />}
+
+      {isOffline && !recording && (
+        <Text type="secondary" style={{ fontSize: 10, flexShrink: 0 }}>
+          Bağlı değil
+        </Text>
+      )}
+
+      <div style={{ flexShrink: 0 }}>
+        <RecordActionButton
+          recording={recording}
+          online={source.online}
+          size="small"
+          onStart={onStart}
+          onStop={onStop}
+        />
+      </div>
+    </div>
   )
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ *  KART (alternatif görünüm)
+ *
+ *  Etiket/süre kutuları modal'a taşındığı için kart artık KOMPAKT: başlık,
+ *  durum ve tek bir eylem düğmesi. Eskiden ~280px'ti, 10.1" ekranda sayfa
+ *  başına çok az kart düşüyordu.
+ * ════════════════════════════════════════════════════════════════════ */
+
+type VcuRecordCardProps = {
+  source: VcuRecordSource
+  recording: VcuRecording | null
+  now: number
+  onStart: () => void
+  onStop: () => void
+}
+
+function VcuRecordCard({ source, recording, now, onStart, onStop }: VcuRecordCardProps) {
+  const { token } = useToken()
+  const meta = RECORD_SOURCE_META[source.type]
+  const isOffline = !source.online
 
   return (
     <Card
       size="small"
       style={{
         opacity: isOffline ? 0.6 : 1,
-        borderColor: isRecording ? token.colorError : undefined,
-        background: isRecording ? token.colorErrorBg : undefined,
+        borderColor: recording ? token.colorError : undefined,
+        background: recording ? token.colorErrorBg : undefined,
       }}
       title={
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <span
-            className={isRecording ? "vcu-live-dot" : undefined}
-            style={{
-              width: 8,
-              height: 8,
-              flexShrink: 0,
-              borderRadius: 999,
-              background: isRecording
-                ? token.colorError
-                : isOffline
-                  ? token.colorTextQuaternary
-                  : token.colorSuccess,
-              display: "inline-block",
-            }}
-          />
+          <StatusDot recording={recording} online={source.online} />
           <Text strong style={{ fontSize: 12, minWidth: 0 }} ellipsis>
             {source.name}
-          </Text>
-          <Text type="secondary" style={{ fontWeight: 400, fontSize: 11, flexShrink: 0 }}>
-            ({source.location})
           </Text>
         </div>
       }
       extra={
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <Tag icon={meta.icon} color={meta.color} style={{ marginInlineEnd: 0 }}>
-            {meta.label}
-          </Tag>
-          {statusTag}
-        </div>
+        <Tag icon={meta.icon} color={meta.color} style={{ marginInlineEnd: 0 }}>
+          {meta.label}
+        </Tag>
       }
     >
-      {isRecording ? (
-        /* ── KAYIT SÜRÜYOR: sayaç + kaydın etiketleri (değiştirilemez) ── */
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {/* Süre sınırı varsa sayaç GERİ SAYAR (kalan süre), yoksa geçen
-              süreyi ileri sayar. Otomatik durdurma sayfa düzeyinde. */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              justifyContent: "space-between",
-              gap: 8,
-              padding: "10px 12px",
-              borderRadius: token.borderRadius,
-              border: `1px solid ${token.colorErrorBorder}`,
-              background: token.colorBgContainer,
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-              <Text
-                type="secondary"
-                style={{ fontSize: 9, letterSpacing: 0.5, textTransform: "uppercase" }}
-              >
-                {remaining === null ? "Geçen süre" : "Kalan süre"}
-              </Text>
-              <Text
-                style={{
-                  fontFamily: "monospace",
-                  fontSize: 22,
-                  fontWeight: 600,
-                  lineHeight: 1.1,
-                  color: token.colorError,
-                }}
-              >
-                {formatDuration(remaining ?? elapsed)}
-              </Text>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-end",
-                gap: 2,
-                textAlign: "right",
-              }}
-            >
-              <Text type="secondary" style={{ fontSize: 10 }}>
-                Başlangıç: {dayjs(recording.startedAt).format("HH:mm:ss")}
-              </Text>
-              <Text type="secondary" style={{ fontSize: 10 }}>
-                {remaining === null
-                  ? "Süresiz — elle durdurun"
-                  : `Geçen ${formatDuration(elapsed)} / ${formatDuration(planned)}`}
-              </Text>
-              {remaining !== null && (
-                <Text style={{ fontSize: 10, color: token.colorError }}>
-                  Bitince otomatik durur
-                </Text>
-              )}
-            </div>
-          </div>
-
-          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 4 }}>
-            <TagsOutlined style={{ fontSize: 11, color: token.colorTextTertiary }} />
-            {recording.tags.map((tag) => (
-              <Tag key={tag} color="blue" style={{ marginInlineEnd: 0, fontSize: 10 }}>
-                {tag}
-              </Tag>
-            ))}
-          </div>
-        </div>
-      ) : (
-        /* ── HAZIR: kayıt başlamadan önce etiketler girilir ── */
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>
-              Etiketler
-            </Text>
-            <Text type="secondary" style={{ fontSize: 10 }}>
-              {draftTags.length}/{MAX_RECORD_TAGS}
-            </Text>
-          </div>
-
-          <Select
-            mode="tags"
-            value={draftTags}
-            disabled={isOffline}
-            // maxCount antd tarafında da sınırlıyor; slice, sürüm farkına karşı
-            // ikinci bir emniyet (yapıştırarak toplu giriş de kırpılsın diye).
-            maxCount={MAX_RECORD_TAGS}
-            onChange={(value: string[]) => onDraftTagsChange(value.slice(0, MAX_RECORD_TAGS))}
-            placeholder={
-              tagOptions.length === 0
-                ? `Etiket yazın (en fazla ${MAX_RECORD_TAGS})`
-                : `Etiket seçin veya yazın (en fazla ${MAX_RECORD_TAGS})`
-            }
-            suffixIcon={<TagsOutlined />}
-            style={{ width: "100%" }}
-            maxTagCount="responsive"
-            // Hazır öneri YOK: liste boş başlar, operatörün yazdığı etiketlerle
-            // dolar (bkz. sayfa düzeyindeki knownTags).
-            options={tagOptions.map((tag) => ({ label: tag, value: tag }))}
-            notFoundContent={null}
-          />
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginTop: 4,
-            }}
-          >
-            <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>
-              Kayıt süresi
-            </Text>
-            <Text type="secondary" style={{ fontSize: 10 }}>
-              {draftSeconds > 0
-                ? `${formatDuration(draftSeconds)} sonra otomatik durur`
-                : "Süresiz — elle durdurulur"}
-            </Text>
-          </div>
-
-          {/* Saat + dakika. İkisi de 0 ise süre sınırı yoktur; kayıt yalnızca
-              operatör durdurunca biter. Süre verilse bile "Kayıt Durdur"
-              her zaman açık — erken durdurmak serbest. */}
-          <div style={{ display: "flex", gap: 6 }}>
-            <Select
-              value={draftHours}
-              disabled={isOffline}
-              onChange={(hours: number) => onDraftSecondsChange(hours * 3600 + draftMinutes * 60)}
-              options={HOUR_OPTIONS}
-              style={{ flex: 1 }}
-            />
-            <Select
-              value={draftMinutes}
-              disabled={isOffline}
-              onChange={(minutes: number) => onDraftSecondsChange(draftHours * 3600 + minutes * 60)}
-              options={MINUTE_OPTIONS}
-              style={{ flex: 1 }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Alt buton çubuğu — Kayıt Başlat / Kayıt Durdur */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          marginTop: 10,
-          paddingTop: 8,
-          borderTop: `1px solid ${token.colorBorderSecondary}`,
-        }}
-      >
-        {isRecording ? (
-          <Button danger type="primary" icon={<PoweroffOutlined />} onClick={onStop}>
-            Kayıt Durdur
-          </Button>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {recording ? (
+          <>
+            <RecordCounter recording={recording} now={now} />
+            <RecordTags tags={recording.tags} />
+          </>
         ) : (
-          <Tooltip
-            title={
-              isOffline
-                ? "Kaynak bağlı değil"
-                : draftTags.length === 0
-                  ? "Kayıt başlatmadan önce en az bir etiket ekleyin"
-                  : ""
-            }
-          >
-            {/* disabled butonda Tooltip tetiklenmediği için sarmalayıcı span */}
-            <span>
-              <Button
-                icon={<span style={{ fontSize: 11 }}>●</span>}
-                disabled={isOffline || draftTags.length === 0}
-                style={
-                  isOffline || draftTags.length === 0
-                    ? undefined
-                    : { background: token.colorError, borderColor: token.colorError, color: "#fff" }
-                }
-                onClick={onStart}
-              >
-                Kayıt Başlat
-              </Button>
-            </span>
-          </Tooltip>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            {isOffline
+              ? "Kaynak bağlı değil — kayıt alınamaz."
+              : `${source.location} · Başlat'a dokunun, etiket ve süreyi girin.`}
+          </Text>
         )}
 
-        <Text type="secondary" style={{ fontSize: 10, textAlign: "right" }}>
-          {isRecording ? "Durdurunca kütüphaneye düşer" : "Etiketler kayıtla birlikte saklanır"}
-        </Text>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            paddingTop: 6,
+            borderTop: `1px solid ${token.colorBorderSecondary}`,
+          }}
+        >
+          <RecordActionButton
+            recording={recording}
+            online={source.online}
+            onStart={onStart}
+            onStop={onStop}
+          />
+          <Text type="secondary" style={{ fontSize: 10, textAlign: "right" }}>
+            {recording ? "Durunca kütüphaneye düşer" : source.location}
+          </Text>
+        </div>
       </div>
     </Card>
   )
@@ -362,13 +404,11 @@ function VcuRecordCard({
  *  CSS scroll-snap — JS'te kaydırma taklit edilmiyor), altta nokta göstergesi
  *  hangi sayfada olunduğunu gösterir ve dokununca o sayfaya kayar.
  *
- *  30+ kaynak olduğunda tek dikey liste yerine bunu seçtik: operatör kaç
- *  kaynak olduğunu (nokta sayısından) görür, sayfalar arası gezinmek tek bir
- *  yatay kaydırma — dikey scroll + arama kombinasyonundan daha hızlı.
+ *  Yalnızca KART görünümünde kullanılır; listede düz dikey kaydırma var.
  * ════════════════════════════════════════════════════════════════════ */
 
-/** Bir sayfada gösterilen kart sayısı (2 satır × 3 sütun varsayımıyla). */
-const RECORD_PAGE_SIZE = 6
+/** Kart görünümünde bir sayfada gösterilen kart sayısı. */
+const RECORD_PAGE_SIZE = 8
 
 function chunk<T>(items: T[], size: number): T[][] {
   const pages: T[][] = []
@@ -384,7 +424,6 @@ type VideoRecordingPageProps = {
   mode: VcuThemeMode
   onModeChange: (mode: VcuThemeMode) => void
   page: VcuPageKey
-  onPageChange: (page: VcuPageKey) => void
   role: VcuRole
   sources: VcuRecordSource[]
   recordings: VcuRecording[]
@@ -398,7 +437,6 @@ export function VideoRecordingPage({
   mode,
   onModeChange,
   page,
-  onPageChange,
   role,
   sources,
   recordings,
@@ -411,10 +449,12 @@ export function VideoRecordingPage({
 
   const [search, setSearch] = useState("")
   const [typeFilter, setTypeFilter] = useState<VcuRecordSourceType | "all">("all")
-  /** Kaynak başına, kayıt başlamadan önce girilen etiket taslağı. */
-  const [draftTags, setDraftTags] = useState<Record<string, string[]>>({})
-  /** Kaynak başına, kayıt başlamadan önce seçilen süre (saniye). 0 → süresiz. */
-  const [draftSeconds, setDraftSeconds] = useState<Record<string, number>>({})
+  /**
+   * Kart varsayılan. Kayıt ekranı normal bilgisayarda açıldığı için genişlik
+   * sorun değil; kartlar daha okunur. Yoğun tarama gerektiğinde operatör
+   * sağ üstteki anahtarla listeye geçer.
+   */
+  const [view, setView] = useState<VcuRecordView>("card")
   /**
    * Etiket kutusunun seçenekleri. Hazır öneri listesi BİLEREK YOK — burası boş
    * başlar ve operatör etiket yazdıkça dolar, böylece aynı etiketi ikinci kez
@@ -424,6 +464,12 @@ export function VideoRecordingPage({
   const [knownTags, setKnownTags] = useState<string[]>([])
   /** Sayaçları saniyede bir ilerleten zaman damgası. */
   const [now, setNow] = useState(() => Date.now())
+
+  /** Başlatma modal'ının hedefi — null ise modal kapalı. */
+  const [startTarget, setStartTarget] = useState<VcuRecordSource | null>(null)
+  const [formTags, setFormTags] = useState<string[]>([])
+  /** Modal'daki süre, saniye. 0 → süresiz. */
+  const [formSeconds, setFormSeconds] = useState(0)
 
   const recordingBySourceId = useMemo(
     () => new Map(recordings.map((recording) => [recording.sourceId, recording])),
@@ -481,12 +527,12 @@ export function VideoRecordingPage({
   const carouselRef = useRef<HTMLDivElement>(null)
   const [currentPage, setCurrentPage] = useState(0)
 
-  // Filtre değişince (arama/tür) sayfa sayısı da değişir — en başa dön, yoksa
-  // "3. sayfadaydım" durumu artık var olmayan bir sayfayı gösterebilir.
+  // Filtre ya da görünüm değişince sayfa sayısı da değişir — en başa dön,
+  // yoksa "3. sayfadaydım" durumu artık var olmayan bir sayfayı gösterebilir.
   useEffect(() => {
     setCurrentPage(0)
     carouselRef.current?.scrollTo({ left: 0 })
-  }, [search, typeFilter])
+  }, [search, typeFilter, view])
 
   function handleCarouselScroll(event: UIEvent<HTMLDivElement>) {
     const el = event.currentTarget
@@ -501,31 +547,33 @@ export function VideoRecordingPage({
     el.scrollTo({ left: index * el.clientWidth, behavior: "smooth" })
   }
 
-  /**
-   * Etiket taslağını günceller ve yazılan etiketleri öneri havuzuna katar.
-   * Havuz boş başlar (hazır öneri yok) — operatör ne yazarsa o birikir.
-   */
-  function handleDraftTagsChange(sourceId: string, tags: string[]) {
-    setDraftTags((prev) => ({ ...prev, [sourceId]: tags }))
+  /** "Başlat" — kayıt hemen başlamaz, önce etiket + süre modal'ı açılır. */
+  function openStartModal(source: VcuRecordSource) {
+    setStartTarget(source)
+    setFormTags([])
+    setFormSeconds(0)
+  }
+
+  /** Modal onayı: etiketleri öneri havuzuna kat ve kaydı başlat. */
+  function confirmStart() {
+    if (!startTarget || formTags.length === 0) return
+
     setKnownTags((prev: string[]) => {
       const merged = new Set<string>(prev)
-      for (const tag of tags) {
+      for (const tag of formTags) {
         const trimmed = tag.trim()
         if (trimmed) merged.add(trimmed)
       }
       if (merged.size === prev.length) return prev
       return Array.from(merged).sort((a, b) => a.localeCompare(b, "tr-TR"))
     })
+
+    onStartRecording(startTarget.id, formTags, formSeconds)
+    setStartTarget(null)
   }
 
-  function handleStart(sourceId: string) {
-    const tags = draftTags[sourceId] ?? []
-    if (tags.length === 0) return
-    onStartRecording(sourceId, tags, draftSeconds[sourceId] ?? 0)
-    // Taslağı temizle: kayıt durunca kart yeni bir kayıt için boş açılsın.
-    setDraftTags((prev) => ({ ...prev, [sourceId]: [] }))
-    setDraftSeconds((prev) => ({ ...prev, [sourceId]: 0 }))
-  }
+  const formHours = Math.floor(formSeconds / 3600)
+  const formMinutes = Math.floor((formSeconds % 3600) / 60)
 
   return (
     <div
@@ -540,7 +588,6 @@ export function VideoRecordingPage({
     >
       <VcuHeader
         page={page}
-        onPageChange={onPageChange}
         subtitle={`(${sources.length} Kayıt Kaynağı)`}
         role={role}
         recordingCount={recordings.length}
@@ -565,7 +612,8 @@ export function VideoRecordingPage({
         }
       />
 
-      {/* Filtre çubuğu — kütüphanedeki dille aynı: arama + tür sekmeleri */}
+      {/* Filtre çubuğu — kütüphanedeki dille aynı: arama + tür sekmeleri,
+          sağ uçta liste/kart anahtarı. */}
       <div
         style={{
           flexShrink: 0,
@@ -582,7 +630,7 @@ export function VideoRecordingPage({
           placeholder="Kaynak ara..."
           prefix={<SearchOutlined style={{ color: token.colorTextTertiary }} />}
           allowClear
-          style={{ width: 260, flexShrink: 0 }}
+          style={{ width: 240, flexShrink: 0 }}
         />
 
         <Segmented
@@ -597,13 +645,22 @@ export function VideoRecordingPage({
           ]}
         />
 
-        <Text type="secondary" style={{ fontSize: 10, marginInlineStart: "auto" }}>
-          {recordings.length > 0
-            ? `${recordings.length} kayıt sürüyor — durdurulunca kütüphaneye düşer`
-            : pages.length > 1
-              ? `Sayfa ${currentPage + 1}/${pages.length} — yana kaydırın`
-              : "Etiket ekleyip kayıt başlatın"}
-        </Text>
+        <div style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+          <Text type="secondary" style={{ fontSize: 10 }}>
+            {recordings.length > 0
+              ? `${recordings.length} kayıt sürüyor`
+              : `${filteredSources.length} kaynak`}
+          </Text>
+
+          <Segmented
+            value={view}
+            onChange={(value) => setView(value as VcuRecordView)}
+            options={[
+              { value: "list" satisfies VcuRecordView, icon: <UnorderedListOutlined /> },
+              { value: "card" satisfies VcuRecordView, icon: <AppstoreOutlined /> },
+            ]}
+          />
+        </div>
       </div>
 
       {filteredSources.length === 0 ? (
@@ -612,7 +669,32 @@ export function VideoRecordingPage({
             Kaynak bulunamadı.
           </Text>
         </div>
+      ) : view === "list" ? (
+        /* ── LİSTE: düz dikey kaydırma, sayfalama yok ── */
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            padding: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          {filteredSources.map((source) => (
+            <VcuRecordRow
+              key={source.id}
+              source={source}
+              recording={recordingBySourceId.get(source.id) ?? null}
+              now={now}
+              onStart={() => openStartModal(source)}
+              onStop={() => onStopRecording(source.id)}
+            />
+          ))}
+        </div>
       ) : (
+        /* ── KART: yatay sayfalı şerit ── */
         <>
           {/* Yatay kaydırma scrollbar'ı gizler — Instagram hikâye şeridi hissi
               için; tabletin dokunmatik kaydırması bu stilden bağımsız çalışır. */}
@@ -625,6 +707,7 @@ export function VideoRecordingPage({
             className="vcu-record-carousel"
             style={{
               flex: 1,
+              minHeight: 0,
               display: "flex",
               overflowX: "auto",
               overflowY: "hidden",
@@ -642,8 +725,8 @@ export function VideoRecordingPage({
                   overflowY: "auto",
                   padding: 12,
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
-                  gap: 12,
+                  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                  gap: 10,
                   alignContent: "start",
                 }}
               >
@@ -652,28 +735,21 @@ export function VideoRecordingPage({
                     key={source.id}
                     source={source}
                     recording={recordingBySourceId.get(source.id) ?? null}
-                    draftTags={draftTags[source.id] ?? []}
-                    draftSeconds={draftSeconds[source.id] ?? 0}
-                    tagOptions={knownTags}
                     now={now}
-                    onDraftTagsChange={(tags) => handleDraftTagsChange(source.id, tags)}
-                    onDraftSecondsChange={(seconds) =>
-                      setDraftSeconds((prev) => ({ ...prev, [source.id]: seconds }))
-                    }
-                    onStart={() => handleStart(source.id)}
+                    onStart={() => openStartModal(source)}
                     onStop={() => onStopRecording(source.id)}
                   />
                 ))}
               </div>
             ))}
           </div>
-
         </>
       )}
 
-      {/* Alt çubuk — sayfa noktaları ortada, tema seçici sağda. Diğer iki
-          sayfada tema seçici VcuSelectionFooter'da; bu sayfanın öyle bir
-          çubuğu olmadığı için burada kendi alt çubuğunu taşıyor. */}
+      {/* Alt çubuk — sayfa noktaları (yalnızca kart görünümünde) ortada,
+          tema seçici sağda. Diğer iki sayfada tema seçici
+          VcuSelectionFooter'da; bu sayfanın öyle bir çubuğu olmadığı için
+          burada kendi alt çubuğunu taşıyor. */}
       <footer
         style={{
           height: 40,
@@ -688,9 +764,9 @@ export function VideoRecordingPage({
       >
         <div style={{ flex: 1 }} />
 
-        {/* Sayfa göstergesi — Instagram hikâye noktaları gibi; dokununca o sayfaya kayar. */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {pages.length > 1 &&
+          {view === "card" &&
+            pages.length > 1 &&
             pages.map((_, index) => (
               <button
                 key={index}
@@ -715,6 +791,85 @@ export function VideoRecordingPage({
           <VcuThemeSelect mode={mode} onModeChange={onModeChange} />
         </div>
       </footer>
+
+      {/* ── BAŞLATMA MODAL'I — etiket + süre burada girilir ── */}
+      <Modal
+        open={startTarget !== null}
+        title={startTarget ? `${startTarget.name} — kayıt başlat` : ""}
+        okText="Kayıt Başlat"
+        cancelText="Vazgeç"
+        okButtonProps={{ danger: true, disabled: formTags.length === 0 }}
+        onOk={confirmStart}
+        onCancel={() => setStartTarget(null)}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>
+              Etiketler (en az 1)
+            </Text>
+            <Text type="secondary" style={{ fontSize: 10 }}>
+              {formTags.length}/{MAX_RECORD_TAGS}
+            </Text>
+          </div>
+
+          <Select
+            mode="tags"
+            value={formTags}
+            autoFocus
+            // maxCount antd tarafında da sınırlıyor; slice, sürüm farkına karşı
+            // ikinci bir emniyet (yapıştırarak toplu giriş de kırpılsın diye).
+            maxCount={MAX_RECORD_TAGS}
+            onChange={(value: string[]) => setFormTags(value.slice(0, MAX_RECORD_TAGS))}
+            placeholder={
+              knownTags.length === 0
+                ? `Etiket yazın (en fazla ${MAX_RECORD_TAGS})`
+                : `Etiket seçin veya yazın (en fazla ${MAX_RECORD_TAGS})`
+            }
+            suffixIcon={<TagsOutlined />}
+            style={{ width: "100%" }}
+            maxTagCount="responsive"
+            // Hazır öneri YOK: liste boş başlar, operatörün yazdıklarıyla dolar.
+            options={knownTags.map((tag) => ({ label: tag, value: tag }))}
+            notFoundContent={null}
+          />
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginTop: 10,
+            }}
+          >
+            <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>
+              Kayıt süresi
+            </Text>
+            <Text type="secondary" style={{ fontSize: 10 }}>
+              {formSeconds > 0
+                ? `${formatDuration(formSeconds)} sonra otomatik durur`
+                : "Süresiz — elle durdurulur"}
+            </Text>
+          </div>
+
+          {/* Saat + dakika. İkisi de 0 ise süre sınırı yoktur; kayıt yalnızca
+              operatör durdurunca biter. Süre verilse bile "Durdur" her zaman
+              açık — erken durdurmak serbest. */}
+          <div style={{ display: "flex", gap: 6 }}>
+            <Select
+              value={formHours}
+              onChange={(hours: number) => setFormSeconds(hours * 3600 + formMinutes * 60)}
+              options={HOUR_OPTIONS}
+              style={{ flex: 1 }}
+            />
+            <Select
+              value={formMinutes}
+              onChange={(minutes: number) => setFormSeconds(formHours * 3600 + minutes * 60)}
+              options={MINUTE_OPTIONS}
+              style={{ flex: 1 }}
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

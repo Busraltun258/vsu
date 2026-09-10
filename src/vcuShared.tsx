@@ -14,6 +14,7 @@
 
 import {
   AimOutlined,
+  AppstoreOutlined,
   CheckOutlined,
   CloseOutlined,
   DesktopOutlined,
@@ -672,9 +673,18 @@ export function VcuThemeSelect({
   )
 }
 
+/**
+ * Üst başlıktaki sayfa bağlantıları. Sekme değil BAĞLANTI: her sayfa kendi
+ * adresinde ayrı bir pencere olduğu için hepsi yeni sekmede açılır.
+ */
+const PAGE_LINKS: { key: VcuPageKey; label: string; icon: ReactNode }[] = [
+  { key: "gesb", label: "GESB Matrisi", icon: <AppstoreOutlined /> },
+  { key: "adu", label: "ADU Ekranım", icon: <DesktopOutlined /> },
+  { key: "record", label: "Video Kayıt", icon: <VideoCameraOutlined /> },
+]
+
 type VcuHeaderProps = {
   page: VcuPageKey
-  onPageChange: (page: VcuPageKey) => void
   /** Başlığın yanındaki gri açıklama — sayfaya göre değişir. */
   subtitle: string
   /** Sayfaya özgü eylemler (ör. "Tümünü Durdur"). */
@@ -690,7 +700,6 @@ type VcuHeaderProps = {
 
 export function VcuHeader({
   page,
-  onPageChange,
   subtitle,
   extra,
   recordingCount = 0,
@@ -737,44 +746,44 @@ export function VcuHeader({
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-        {/* Video kayıt artık sekme DEĞİL — kendi adresinde, ayrı tarayıcı
-            sekmesinde açılıyor (aşağıdaki düğme). Kayıt sayfası açıkken
-            sekme çubuğu hiç çizilmez: orası kendi başına bir pencere. */}
-        {page !== "record" && (
-          <Segmented
-            value={page}
-            onChange={(value) => onPageChange(value as VcuPageKey)}
-            options={[
-              { label: "GESB Matrisi", value: "gesb" satisfies VcuPageKey },
-              { label: "ADU Ekranım", value: "adu" satisfies VcuPageKey },
-            ]}
-          />
-        )}
+        {/* SEKME ÇUBUĞU YOK. Üç sayfa da kendi adresinde ayrı birer pencere;
+            buradaki bağlantılar hepsini YENİ SEKMEDE açar. Bulunulan sayfanın
+            bağlantısı gösterilmez. Video kayıt yalnızca operatör
+            bilgisayarında görünür — tablette kayıt alınmıyor. */}
+        {PAGE_LINKS.map((link) => {
+          if (link.key === page) return null
+          if (link.key === "record" && role !== "operator") return null
 
-        {/* Tema düğmesi buradan alt çubuğa taşındı — bkz. VcuThemeSelect. */}
+          const button = (
+            <Button
+              icon={link.icon}
+              href={vcuPageHref(link.key)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {link.label}
+            </Button>
+          )
 
-        {/* Kayıt ekranına yönlendirme: aynı uygulama, ayrı adres, YENİ SEKME.
-            Tablette (control-unit) hiç görünmez — kayıt normal bilgisayardan
-            alınıyor. Rozet süren kayıt sayısını gösterir (0 ise antd gizler). */}
-        {role === "operator" && page !== "record" && (
-          <Tooltip title="Video kayıt ekranını ayrı bir sekmede açar">
+          // Kayıt bağlantısında süren kayıt sayısı rozeti (0 ise antd gizler).
+          return link.key === "record" ? (
             <Badge
+              key={link.key}
               count={recordingCount}
               size="small"
               color={token.colorError}
               style={{ boxShadow: "none" }}
             >
-              <Button
-                icon={<VideoCameraOutlined />}
-                href={vcuPageHref("record")}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Video Kayıt
-              </Button>
+              {button}
             </Badge>
-          </Tooltip>
-        )}
+          ) : (
+            <span key={link.key} style={{ display: "inline-flex" }}>
+              {button}
+            </span>
+          )
+        })}
+
+        {/* Tema düğmesi buradan alt çubuğa taşındı — bkz. VcuThemeSelect. */}
 
         {extra}
       </div>
@@ -1070,7 +1079,7 @@ export function VcuVideoLibrary({
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Video, kamera veya etiket ara..."
+          placeholder="Kayıtlı veya canlı video ara..."
           prefix={<SearchOutlined style={{ color: token.colorTextTertiary }} />}
           allowClear
         />
